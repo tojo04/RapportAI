@@ -78,7 +78,7 @@ function AudioUploader({
         </div>
 
         <label
-          className={`inline-flex min-h-11 items-center justify-center rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${
+          className={`relative inline-flex min-h-11 items-center justify-center rounded-xl border px-5 py-2.5 text-sm font-semibold transition ${
             isLoading
               ? 'cursor-not-allowed border-slate-700 bg-slate-800 text-slate-500'
               : 'cursor-pointer border-sky-400/50 bg-sky-400/10 text-sky-200 hover:border-sky-300 hover:bg-sky-400/20'
@@ -87,7 +87,7 @@ function AudioUploader({
           Choose audio file
           <input
             accept=".mp3,.wav,audio/mpeg,audio/wav"
-            className="sr-only"
+            className="absolute inset-0 cursor-pointer rounded-xl opacity-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed"
             disabled={isLoading}
             onChange={handleFileChange}
             type="file"

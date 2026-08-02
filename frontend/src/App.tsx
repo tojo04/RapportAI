@@ -1,7 +1,10 @@
 import { useState } from 'react';
 
+import AnalysisResults from './components/AnalysisResults';
 import AudioUploader from './components/AudioUploader';
 import ErrorMessage from './components/ErrorMessage';
+import ScoreBreakdown from './components/ScoreBreakdown';
+import ScoreCard from './components/ScoreCard';
 import { analyzeCall } from './services/api';
 import type { AnalyzeCallResponse } from './types/analysis';
 
@@ -42,7 +45,7 @@ function App() {
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 sm:py-16">
-      <section className="mx-auto w-full max-w-3xl rounded-3xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl shadow-sky-950/30 sm:p-12">
+      <section className="mx-auto w-full max-w-6xl rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-sky-950/30 sm:p-10 lg:p-12">
         <p className="mb-4 text-sm font-semibold uppercase tracking-[0.22em] text-sky-400">
           AI-assisted sales coaching
         </p>
@@ -80,18 +83,24 @@ function App() {
 
           {result && (
             <section
+              aria-labelledby="analysis-complete-heading"
               aria-live="polite"
-              className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-5"
+              className="space-y-6"
             >
-              <h2 className="text-lg font-semibold text-emerald-100">
+              <h2
+                className="text-2xl font-semibold text-emerald-100"
+                id="analysis-complete-heading"
+              >
                 Analysis complete
               </h2>
-              <p className="mt-2 text-sm text-emerald-200">
-                Call score: {result.score.total}/100 · {result.score.category}
-              </p>
-              <p className="mt-1 text-sm text-slate-300">
-                Your full results dashboard is ready for the next build step.
-              </p>
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                <ScoreCard score={result.score} />
+                <ScoreBreakdown breakdown={result.score.breakdown} />
+              </div>
+              <AnalysisResults
+                analysis={result.analysis}
+                transcript={result.transcript}
+              />
             </section>
           )}
         </div>

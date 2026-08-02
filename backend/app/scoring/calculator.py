@@ -1,8 +1,8 @@
 from app.models.analysis import (
     CallAnalysis,
     ScoreBreakdown,
-    ScoreCategory,
     ScoreResult,
+    score_category_for_total,
 )
 
 
@@ -22,16 +22,6 @@ def _scale_quality_rating(rating: int, maximum_points: int) -> int:
     """
 
     return round(rating / MAX_QUALITY_RATING * maximum_points)
-
-
-def _score_category(total: int) -> ScoreCategory:
-    if total >= 85:
-        return "Excellent"
-    if total >= 70:
-        return "Good"
-    if total >= 50:
-        return "Needs Improvement"
-    return "Poor"
 
 
 def calculate_call_score(analysis: CallAnalysis) -> ScoreResult:
@@ -70,6 +60,6 @@ def calculate_call_score(analysis: CallAnalysis) -> ScoreResult:
 
     return ScoreResult(
         total=total,
-        category=_score_category(total),
+        category=score_category_for_total(total),
         breakdown=breakdown,
     )

@@ -111,6 +111,32 @@ describe('analyzeCall', () => {
     ).rejects.toThrow('malformed analysis data');
   });
 
+  it('rejects a score that disagrees with its component breakdown', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ...SUCCESS_RESPONSE,
+        score: { ...SUCCESS_RESPONSE.score, total: 90 },
+      }),
+    );
+
+    await expect(
+      analyzeCall(new File(['audio'], 'call.mp3', { type: 'audio/mpeg' })),
+    ).rejects.toThrow('malformed analysis data');
+  });
+
+  it('rejects a score category that disagrees with its total', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ...SUCCESS_RESPONSE,
+        score: { ...SUCCESS_RESPONSE.score, category: 'Good' },
+      }),
+    );
+
+    await expect(
+      analyzeCall(new File(['audio'], 'call.mp3', { type: 'audio/mpeg' })),
+    ).rejects.toThrow('malformed analysis data');
+  });
+
   it('rejects successful responses containing invalid JSON', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,

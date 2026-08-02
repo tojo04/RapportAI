@@ -2,6 +2,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings, get_settings
 from app.models.analysis import AnalyzeCallResponse
@@ -105,8 +106,16 @@ async def analyze_call(
             settings.max_upload_mb * 1024 * 1024,
         )
 
-        transcript = transcribe_audio(temporary_path, settings=settings)
-        analysis = analyze_transcript(transcript, settings=settings)
+        transcript = await run_in_threadpool(
+            transcribe_audio,
+            temporary_path,
+            settings=settings,
+        )
+        analysis = await run_in_threadpool(
+            analyze_transcript,
+            transcript,
+            settings=settings,
+        )
         score = calculate_call_score(analysis)
 
         return AnalyzeCallResponse(

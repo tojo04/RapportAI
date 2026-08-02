@@ -170,3 +170,19 @@ def test_unknown_fields_are_rejected() -> None:
 
     with pytest.raises(ValidationError):
         CallAnalysis.model_validate(data)
+
+
+def test_score_total_must_equal_breakdown() -> None:
+    data = score_data()
+    data["total"] = 90
+
+    with pytest.raises(ValidationError, match="component breakdown"):
+        ScoreResult.model_validate(data)
+
+
+def test_score_category_must_match_total() -> None:
+    data = score_data()
+    data["category"] = "Good"
+
+    with pytest.raises(ValidationError, match="category must match"):
+        ScoreResult.model_validate(data)

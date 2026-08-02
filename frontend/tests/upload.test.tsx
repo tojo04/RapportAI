@@ -54,6 +54,17 @@ describe('audio upload workflow', () => {
     expect(screen.getByRole('button', { name: 'Analyze Call' })).toBeDisabled();
   });
 
+  it('provides visible keyboard focus for file selection', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const fileInput = screen.getByLabelText('Choose audio file');
+    await user.tab();
+
+    expect(fileInput).toHaveFocus();
+    expect(fileInput).toHaveClass('focus-visible:outline');
+  });
+
   it('shows a valid selected file and enables analysis', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -115,7 +126,7 @@ describe('audio upload workflow', () => {
     ).toBeInTheDocument();
   });
 
-  it('submits the selected file and shows a success placeholder', async () => {
+  it('submits the selected file and shows the result dashboard', async () => {
     const user = userEvent.setup();
     const audioFile = createAudioFile('discovery-call.wav');
     mockedAnalyzeCall.mockResolvedValueOnce(successfulResponse);
@@ -127,8 +138,9 @@ describe('audio upload workflow', () => {
     expect(
       await screen.findByRole('heading', { name: 'Analysis complete' }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText('91 out of 100')).toBeInTheDocument();
     expect(
-      screen.getByText('Call score: 91/100 · Excellent'),
+      screen.getByText('The salesperson discussed reporting requirements.'),
     ).toBeInTheDocument();
     expect(mockedAnalyzeCall).toHaveBeenCalledWith(audioFile);
   });

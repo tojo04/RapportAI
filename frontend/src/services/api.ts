@@ -93,13 +93,34 @@ function isScoreBreakdown(value: unknown): value is ScoreBreakdown {
 }
 
 function isScoreResult(value: unknown): value is ScoreResult {
+  if (
+    !isRecord(value) ||
+    !isIntegerBetween(value.total, 0, 100) ||
+    typeof value.category !== 'string' ||
+    !SCORE_CATEGORIES.includes(value.category as ScoreCategory) ||
+    !isScoreBreakdown(value.breakdown)
+  ) {
+    return false;
+  }
+
+  const componentTotal =
+    value.breakdown.discovery +
+    value.breakdown.objection_handling +
+    value.breakdown.communication_clarity +
+    value.breakdown.confirmed_next_step +
+    value.breakdown.follow_up_actions;
+
   return (
-    isRecord(value) &&
-    isIntegerBetween(value.total, 0, 100) &&
-    typeof value.category === 'string' &&
-    SCORE_CATEGORIES.includes(value.category as ScoreCategory) &&
-    isScoreBreakdown(value.breakdown)
+    value.total === componentTotal &&
+    value.category === scoreCategoryForTotal(value.total)
   );
+}
+
+function scoreCategoryForTotal(total: number): ScoreCategory {
+  if (total >= 85) return 'Excellent';
+  if (total >= 70) return 'Good';
+  if (total >= 50) return 'Needs Improvement';
+  return 'Poor';
 }
 
 function isAnalyzeCallResponse(value: unknown): value is AnalyzeCallResponse {

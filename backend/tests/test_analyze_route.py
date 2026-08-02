@@ -1,7 +1,8 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import MagicMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -214,3 +215,30 @@ def test_analysis_failure_becomes_http_error_and_cleans_up(
     }
     temporary_path = transcription.call_args.args[0]
     assert not temporary_path.exists()
+
+
+def test_openai_services_run_outside_the_event_loop(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    transcription = MagicMock(return_value="A useful transcript.")
+    analysis = MagicMock(return_value=valid_analysis())
+
+    async def execute_in_test_thread(
+        function: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        return function(*args, **kwargs)
+
+    thread_runner = AsyncMock(side_effect=execute_in_test_thread)
+    monkeypatch.setattr(routes, "transcribe_audio", transcription)
+    monkeypatch.setattr(routes, "analyze_transcript", analysis)
+    monkeypatch.setattr(routes, "run_in_threadpool", thread_runner)
+
+    response = client.post(
+        "/api/analyze-call",
+        files={"file": ("call.mp3", b"audio bytes", "audio/mpeg")},
+    )
+
+    assert response.status_code == 200
+    assert thread_runner.await_count == 2
