@@ -1,4 +1,4 @@
-# Sales Call Analyzer — Codex Instructions
+# RapportAI — Codex Instructions
 
 ## 1. Project goal
 
@@ -91,7 +91,7 @@ Do not add any of the following unless explicitly requested:
 Use the following structure:
 
 ```text
-sales-call-analyzer/
+RapportAI/
 ├── AGENTS.md
 ├── BUILD_STEPS.md
 ├── README.md

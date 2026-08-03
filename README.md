@@ -1,6 +1,6 @@
-# Sales Call Analyzer
+# RapportAI
 
-Sales Call Analyzer is a small full-stack AI application that turns an MP3 or WAV sales-call recording into a transcript, structured sales insights, and an explainable quality score out of 100.
+RapportAI is a small full-stack AI application that turns an MP3 or WAV sales-call recording into a transcript, structured sales insights, and an explainable quality score out of 100.
 
 It is designed as an interview-friendly example of practical AI engineering: OpenAI handles transcription and semantic extraction, Pydantic validates the structured model output, and ordinary Python business logic calculates the final score.
 

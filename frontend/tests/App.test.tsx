@@ -7,7 +7,7 @@ describe('App', () => {
     render(<App />);
 
     expect(
-      screen.getByRole('heading', { name: 'Sales Call Analyzer' }),
+      screen.getByRole('heading', { name: 'RapportAI' }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(

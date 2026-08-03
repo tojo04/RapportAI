@@ -50,7 +50,7 @@ function App() {
           AI-assisted sales coaching
         </p>
         <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
-          Sales Call Analyzer
+          RapportAI
         </h1>
         <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
           Turn recorded sales conversations into structured insights and an

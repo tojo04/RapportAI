@@ -1,4 +1,4 @@
-# Sales Call Analyzer — Codex Build Steps
+# RapportAI — Codex Build Steps
 
 This file contains the recommended order for building the project with Codex.
 
@@ -54,8 +54,8 @@ The result screen should contain:
 Run:
 
 ```powershell
-mkdir sales-call-analyzer
-cd sales-call-analyzer
+mkdir RapportAI
+cd RapportAI
 git init
 code .
 ```
@@ -78,7 +78,7 @@ git commit -m "docs: add project instructions and build plan"
 ```text
 Read AGENTS.md completely before making changes.
 
-Create the initial Sales Call Analyzer repository structure.
+Create the initial RapportAI repository structure.
 
 Frontend requirements:
 - React

@@ -8,7 +8,7 @@ from app.core.config import get_settings
 settings = get_settings()
 
 app = FastAPI(
-    title="Sales Call Analyzer API",
+    title="RapportAI API",
     description="API for transcribing and analyzing recorded sales calls.",
 )
 

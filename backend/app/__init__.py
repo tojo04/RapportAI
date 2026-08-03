@@ -1,1 +1,1 @@
-"""Sales Call Analyzer backend application."""
+"""RapportAI backend application."""
