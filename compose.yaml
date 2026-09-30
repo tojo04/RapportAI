@@ -1,0 +1,21 @@
+name: rapportai
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rapportai}
+      POSTGRES_USER: ${POSTGRES_USER:-rapportai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rapportai}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rapportai} -d ${POSTGRES_DB:-rapportai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

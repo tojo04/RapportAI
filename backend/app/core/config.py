@@ -30,6 +30,13 @@ class Settings:
     live_stt_model: str = "gpt-live-transcribe"
     live_stt_finalization_timeout_ms: int = 2_000
     live_classification_model: str | None = None
+    database_url: str = (
+        "postgresql+psycopg://rapportai:rapportai@localhost:5432/rapportai"
+    )
+    knowledge_embedding_model: str = "text-embedding-3-small"
+    knowledge_embedding_dimensions: int = 1536
+    knowledge_evidence_threshold: float = 0.35
+    redis_url: str = "redis://localhost:6379/0"
 
     @property
     def browser_origins(self) -> tuple[str, ...]:
@@ -63,6 +70,16 @@ def _allowed_origins(frontend_origin: str) -> tuple[str, ...]:
         origin.strip() for origin in configured.split(",") if origin.strip()
     )
     return origins or (frontend_origin,)
+
+
+def _float_environment_value(name: str, default: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number.") from exc
+    if not 0 <= value <= 2:
+        raise ValueError(f"{name} must be between 0 and 2.")
+    return value
 
 
 @lru_cache
@@ -131,5 +148,25 @@ def get_settings() -> Settings:
         ),
         live_classification_model=_optional_environment_value(
             "LIVE_CLASSIFICATION_MODEL"
+        ),
+        database_url=(
+            os.getenv(
+                "DATABASE_URL",
+                "postgresql+psycopg://rapportai:rapportai@localhost:5432/rapportai",
+            ).strip()
+        ),
+        knowledge_embedding_model=(
+            os.getenv("KNOWLEDGE_EMBEDDING_MODEL", "text-embedding-3-small").strip()
+            or "text-embedding-3-small"
+        ),
+        knowledge_embedding_dimensions=_positive_integer_environment_value(
+            "KNOWLEDGE_EMBEDDING_DIMENSIONS", 1536
+        ),
+        knowledge_evidence_threshold=_float_environment_value(
+            "KNOWLEDGE_EVIDENCE_THRESHOLD", 0.35
+        ),
+        redis_url=(
+            os.getenv("REDIS_URL", "redis://localhost:6379/0").strip()
+            or "redis://localhost:6379/0"
         ),
     )

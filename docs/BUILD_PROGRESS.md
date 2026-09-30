@@ -7,12 +7,12 @@ Last updated: 2026-09-30
 - [x] Task 0 — Audit V1 and reconcile instruction files
 - [x] Task 1 — Define the protocol and session state machine
 - [x] Task 2 — Prove browser-to-backend audio transport
-- [ ] Task 3 — Replace demo capture with correct PCM streaming
-- [ ] Task 4 — Add the streaming transcription adapter
-- [ ] Task 5 — Connect live transcription and implement stop/drain
-- [ ] Task 6 — Add an offline transcript replay harness
-- [ ] Task 7 — Detect live sales events from final context
-- [ ] Task 8 — Introduce PostgreSQL + pgvector and ingest knowledge
+- [x] Task 3 — Replace demo capture with correct PCM streaming
+- [x] Task 4 — Add the streaming transcription adapter
+- [x] Task 5 — Connect live transcription and implement stop/drain
+- [x] Task 6 — Add an offline transcript replay harness
+- [x] Task 7 — Detect live sales events from final context
+- [x] Task 8 — Introduce PostgreSQL + pgvector and ingest knowledge
 - [ ] Task 9 — Implement and evaluate retrieval
 - [ ] Task 10 — Add source-grounded live coaching
 - [ ] Task 11 — Persist active calls and add history APIs
@@ -363,3 +363,19 @@ Task 7 — detect validated, evidence-backed sales signals from final segments.
 ## Next task
 
 Task 8 — add versioned PostgreSQL/pgvector knowledge ingestion.
+
+## Task 8 outcome
+
+- Added pinned SQLAlchemy/Alembic/psycopg/pgvector dependencies, a pgvector
+  Compose service, and the initial migration.
+- Added a clearly fictional five-document corpus, deterministic heading-aware
+  chunks, content/corpus revisions, compatible embedding reuse, and atomic
+  active-corpus publication.
+- Added an explicit fake/real ingestion CLI. Real embeddings remain billable
+  opt-in; tests use deterministic fake vectors.
+- Compose configuration validated, but migration/DB integration remains
+  pending because Docker Desktop was not running.
+
+## Next task
+
+Task 9 — implement exact active-corpus retrieval and labeled evaluation.
