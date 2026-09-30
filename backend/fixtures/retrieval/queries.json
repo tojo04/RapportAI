@@ -1,0 +1,6 @@
+[
+  {"id":"pricing","query":"What does the Growth plan cost?","expected_source":"pricing.md"},
+  {"id":"competitor","query":"How should I compare this with AtlasCRM?","expected_source":"competitors.md"},
+  {"id":"implementation","query":"How long does implementation take?","expected_source":"product.md"},
+  {"id":"unrelated","query":"What is tomorrow's weather?","expected_source":null}
+]

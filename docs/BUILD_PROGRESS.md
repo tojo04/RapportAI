@@ -13,7 +13,7 @@ Last updated: 2026-09-30
 - [x] Task 6 — Add an offline transcript replay harness
 - [x] Task 7 — Detect live sales events from final context
 - [x] Task 8 — Introduce PostgreSQL + pgvector and ingest knowledge
-- [ ] Task 9 — Implement and evaluate retrieval
+- [x] Task 9 — Implement and evaluate retrieval
 - [ ] Task 10 — Add source-grounded live coaching
 - [ ] Task 11 — Persist active calls and add history APIs
 - [ ] Task 12 — Reuse V1 analysis and scoring after live calls
@@ -379,3 +379,17 @@ Task 8 — add versioned PostgreSQL/pgvector knowledge ingestion.
 ## Next task
 
 Task 9 — implement exact active-corpus retrieval and labeled evaluation.
+
+## Task 9 outcome
+
+- Added parameterized exact cosine search scoped to the active corpus, with
+  model/dimension enforcement, bounded top-k, source versions, and explicit
+  no-evidence results.
+- Added labeled pricing, competitor, implementation, and unrelated fixtures,
+  plus a fake/real developer query CLI.
+- Deterministic tests validate behavior only; real embedding retrieval quality
+  was not measured. The configurable threshold requires empirical tuning.
+
+## Next task
+
+Task 10 — add source-grounded live text coaching.
