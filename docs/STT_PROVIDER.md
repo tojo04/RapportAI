@@ -29,3 +29,37 @@ little-endian order. Duration tests cover 44.1 kHz and 48 kHz input.
 Task 3 tests the deterministic encoding and transport contract only. It makes
 no paid API call. Browser microphone/device compatibility remains a manual
 check; provider event compatibility is implemented and mocked in Task 4.
+
+## Task 4 adapter contract
+
+The implementation was checked against installed `openai` Python SDK 2.52.0.
+It uses `AsyncOpenAI.realtime.connect`, `session.update`,
+`input_audio_buffer.append`, and `input_audio_buffer.commit`. Automatic SDK
+reconnect is disabled so RapportAI never replays ambiguous audio after a lost
+provider connection.
+
+The adapter exposes `connect`, `send_audio`, `finish_turn`/`flush`, `events`,
+and `close`. It normalizes provider delta/completed events to stable segment
+records, accumulates deltas into replacement partial text, ignores duplicate
+finals, and retains `item_id`/`previous_item_id` so later orchestration can sort
+finals even when completions arrive out of order. Provider details are not
+included in client-safe errors.
+
+Because `gpt-live-transcribe` has no supported provider VAD, a deliberately
+simple local detector starts forwarding when PCM peak amplitude reaches 500 and
+commits after 700 ms of silence. Continuous speech is committed by explicit
+Stop/flush. These are development defaults, not calibrated speech-detection
+quality claims.
+
+### Opt-in paid smoke test
+
+Prepare a short synthetic or consented raw PCM16LE 24 kHz mono file, set the
+server-side key in `backend/.env`, then run from `backend`:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.smoke_streaming_stt .\sample.pcm
+```
+
+This command incurs API usage and was not run automatically. Without it,
+account/model access and real provider behavior remain unverified; all default
+tests use mocks or the deterministic fake.

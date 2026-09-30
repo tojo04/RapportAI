@@ -30,6 +30,7 @@ def test_settings_use_safe_defaults(monkeypatch: MonkeyPatch) -> None:
         "LIVE_MAX_AUDIO_FRAME_BYTES",
         "LIVE_AUDIO_ACK_EVERY_FRAMES",
         "LIVE_MAX_CALL_SECONDS",
+        "LIVE_STT_MODEL",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -50,6 +51,7 @@ def test_settings_use_safe_defaults(monkeypatch: MonkeyPatch) -> None:
     assert settings.live_max_audio_frame_bytes == 262_144
     assert settings.live_audio_ack_every_frames == 4
     assert settings.live_max_call_seconds == 1_800
+    assert settings.live_stt_model == "gpt-live-transcribe"
 
 
 def test_settings_read_and_trim_environment_values(
@@ -73,6 +75,7 @@ def test_settings_read_and_trim_environment_values(
     monkeypatch.setenv("LIVE_MAX_AUDIO_FRAME_BYTES", "65536")
     monkeypatch.setenv("LIVE_AUDIO_ACK_EVERY_FRAMES", "8")
     monkeypatch.setenv("LIVE_MAX_CALL_SECONDS", "900")
+    monkeypatch.setenv("LIVE_STT_MODEL", " custom-live-transcribe ")
 
     settings = get_settings()
 
@@ -94,6 +97,7 @@ def test_settings_read_and_trim_environment_values(
     assert settings.live_max_audio_frame_bytes == 65_536
     assert settings.live_audio_ack_every_frames == 8
     assert settings.live_max_call_seconds == 900
+    assert settings.live_stt_model == "custom-live-transcribe"
     assert "test-key" not in repr(settings)
 
 

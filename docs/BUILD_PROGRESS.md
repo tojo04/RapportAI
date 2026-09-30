@@ -247,5 +247,41 @@ indicator turns off, repeated calls work, and permission denial is recoverable.
 
 ## Next task
 
-Task 4 — add the isolated streaming transcription adapter with a deterministic
-fake and mocked OpenAI Realtime provider tests.
+## Task 4 outcome
+
+### Implemented
+
+- Verified installed OpenAI SDK 2.52.0 methods and current official Realtime
+  session, audio-buffer, delta, completion, and ordering contracts.
+- Added a small streaming adapter with `connect`, `send_audio`, explicit
+  `finish_turn`/`flush`, normalized `events`, and idempotent `close`.
+- Added a deterministic fake and provider injection boundary; no test contacts
+  an external service.
+- Normalized cumulative partials and finals while preserving provider event,
+  item, predecessor, revision, and audio-turn order data. Duplicate finals are
+  ignored and provider completions may arrive out of turn order.
+- Added local peak/silence endpointing because the selected model does not
+  support server or semantic VAD. Silence is not committed, speech pauses
+  commit, and Stop flushes continuous speech.
+- Added sanitized failure/timeout handling, configurable `LIVE_STT_MODEL`, and
+  an explicitly paid raw-PCM smoke-test script that was not run.
+
+### Verification
+
+```text
+backend/.venv/Scripts/python.exe -m pytest
+119 passed, 1 existing provider-library deprecation warning
+
+backend/.venv/Scripts/python.exe -m scripts.smoke_streaming_stt --help
+passed without contacting the provider
+```
+
+### Unverified
+
+The opt-in paid provider smoke test was not run. Account access, model
+availability, and real provider latency/event behavior remain unverified.
+
+## Next task
+
+Task 5 — connect accepted PCM to the adapter, stream normalized partial/final
+events to React, and implement bounded stop/drain cleanup.
