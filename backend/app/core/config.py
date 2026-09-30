@@ -38,6 +38,8 @@ class Settings:
     knowledge_embedding_dimensions: int = 1536
     knowledge_evidence_threshold: float = 0.35
     redis_url: str = "redis://localhost:6379/0"
+    persistence_enabled: bool = False
+    redis_enabled: bool = False
 
     @property
     def browser_origins(self) -> tuple[str, ...]:
@@ -81,6 +83,15 @@ def _float_environment_value(name: str, default: float) -> float:
     if not 0 <= value <= 2:
         raise ValueError(f"{name} must be between 0 and 2.")
     return value
+
+
+def _boolean_environment_value(name: str, default: bool) -> bool:
+    raw = os.getenv(name, str(default)).strip().casefold()
+    if raw in {"true", "1", "yes"}:
+        return True
+    if raw in {"false", "0", "no"}:
+        return False
+    raise ValueError(f"{name} must be true or false.")
 
 
 @lru_cache
@@ -171,4 +182,8 @@ def get_settings() -> Settings:
             os.getenv("REDIS_URL", "redis://localhost:6379/0").strip()
             or "redis://localhost:6379/0"
         ),
+        persistence_enabled=_boolean_environment_value(
+            "PERSISTENCE_ENABLED", False
+        ),
+        redis_enabled=_boolean_environment_value("REDIS_ENABLED", False),
     )

@@ -37,6 +37,7 @@ from app.models.realtime import (
     SessionReadyPayload,
     StartCommand,
     StopCommand,
+    TranscriptFinalEvent,
     WarningEvent,
     LiveTransportLimits,
 )
@@ -65,6 +66,7 @@ from app.services.coaching import CoachService, LiveCoach, OpenAICoachGenerator
 from app.knowledge.ingestion import OpenAIEmbeddingProvider
 from app.knowledge.retrieval import PostgresSearchBackend, RetrievalService
 from app.storage.database import create_database_engine, create_session_factory
+from app.storage.call_repository import CallRepository, PersistenceError
 
 
 router = APIRouter()
@@ -91,10 +93,30 @@ async def create_live_call(
     request: Request,
     settings: Settings = Depends(get_settings),
 ) -> CreateCallResponse:
-    return await _create_live_call_for_store(
+    response = await _create_live_call_for_store(
         _live_call_store(request),
         settings,
     )
+    repository: CallRepository | None = getattr(request.app.state, "call_repository", None)
+    if repository is not None:
+        try:
+            await asyncio.to_thread(repository.create_call, response.call_id)
+            session = await _live_call_store(request).get(response.call_id)
+            if session is not None:
+                async def persist(event: ServerEvent) -> None:
+                    await asyncio.to_thread(repository.record_event, event)
+                session.persistence_sink = persist
+                runner = getattr(request.app.state, "live_analysis_runner", None)
+                if runner is not None:
+                    session.analysis_scheduler = runner.schedule
+        except PersistenceError as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    session = await _live_call_store(request).get(response.call_id)
+    context_store = getattr(request.app.state, "session_context_store", None)
+    if session is not None and context_store is not None:
+        session.context_store = context_store
+        await context_store.start(response.call_id)
+    return response
 
 
 async def _create_live_call_for_store(
@@ -150,6 +172,18 @@ async def _enqueue(
                 queue.put(event),
                 timeout=settings.live_queue_put_timeout_ms / 1_000,
             )
+            if session.persistence_sink is not None:
+                try:
+                    await session.persistence_sink(event)
+                except PersistenceError:
+                    session.persistence_failed = True
+            if isinstance(event, CallEndedEvent) and session.analysis_scheduler is not None:
+                session.analysis_scheduler(session.call_id)
+            if session.context_store is not None:
+                if isinstance(event, TranscriptFinalEvent):
+                    await session.context_store.append(session.call_id, event.payload.model_dump(mode="json"))
+                elif isinstance(event, CallEndedEvent):
+                    await session.context_store.finish(session.call_id)
     except TimeoutError as exc:
         async with session.lock:
             session.state = CallState.FAILED

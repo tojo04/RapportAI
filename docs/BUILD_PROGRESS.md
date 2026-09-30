@@ -15,9 +15,9 @@ Last updated: 2026-09-30
 - [x] Task 8 — Introduce PostgreSQL + pgvector and ingest knowledge
 - [x] Task 9 — Implement and evaluate retrieval
 - [x] Task 10 — Add source-grounded live coaching
-- [ ] Task 11 — Persist active calls and add history APIs
-- [ ] Task 12 — Reuse V1 analysis and scoring after live calls
-- [ ] Task 13 — Add Redis for bounded temporary context
+- [x] Task 11 — Persist active calls and add history APIs
+- [x] Task 12 — Reuse V1 analysis and scoring after live calls
+- [x] Task 13 — Add Redis for bounded temporary context
 - [ ] Task 14 — Finish the dashboard without expanding scope
 - [ ] Task 15 — Evaluate English, Hindi, and Hinglish honestly
 - [ ] Task 16 — Instrument latency and test controlled load
@@ -406,3 +406,31 @@ Task 10 — add source-grounded live text coaching.
 ## Next task
 
 Task 11 — persist live calls and expose bounded history APIs.
+
+## Tasks 11–12 outcome
+
+- Added migrations and idempotent repositories for calls, ordered finals,
+  signals, grounded suggestion snapshots, terminal/incomplete state, and
+  versioned analysis state. Raw audio remains unretained.
+- Added bounded list/detail history and explicit retry APIs, plus startup
+  reconciliation for abandoned calls and analysis claims.
+- Final live transcripts reuse the existing V1 analysis model/service and the
+  exact deterministic V1 scoring function through a supervised task runner.
+- PostgreSQL integration awaits a running Docker daemon; fake-provider unit
+  coverage verifies schema/score convergence and duplicate scheduling.
+
+## Next task
+
+Task 13 — add bounded Redis-backed ephemeral context with fallback.
+
+## Task 13 outcome
+
+- Added a small context-store interface with equivalent bounded in-memory and
+  Redis implementations, call-scoped keys, TTL refresh, atomic NX dedupe, and
+  cleanup.
+- Redis outages fall back to bounded process memory; PostgreSQL history is
+  unaffected. This remains a one-worker, non-resumable live-call design.
+
+## Next task
+
+Task 14 — finish the combined live/upload/history dashboard.

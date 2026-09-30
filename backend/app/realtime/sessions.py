@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import TypeAlias
+from collections.abc import Awaitable, Callable
 from uuid import uuid4
 
 from app.models.realtime import CallState, ServerEvent
@@ -42,6 +43,10 @@ class LiveCallSession:
     audio_frames_received: int = 0
     audio_bytes_received: int = 0
     audio_frames_acknowledged: int = 0
+    persistence_sink: Callable[[ServerEvent], Awaitable[None]] | None = field(default=None, repr=False)
+    persistence_failed: bool = False
+    analysis_scheduler: Callable[[str], bool] | None = field(default=None, repr=False)
+    context_store: object | None = field(default=None, repr=False)
 
     async def attach(
         self,
