@@ -3,11 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
-from app.models.realtime import (
-    TranscriptFinalEvent,
-    TranscriptPartialEvent,
-    TranscriptPayload,
-)
+from app.realtime.transcript_pipeline import TranscriptProjector, TranscriptServerEvent
 from app.services.streaming_transcription import (
     StreamingTranscriber,
     StreamingTranscriptionError,
@@ -19,7 +15,6 @@ class LiveCoordinatorError(RuntimeError):
     pass
 
 
-TranscriptServerEvent = TranscriptPartialEvent | TranscriptFinalEvent
 EventSink = Callable[[TranscriptServerEvent], Awaitable[None]]
 
 
@@ -58,6 +53,7 @@ class LiveTranscriptionCoordinator:
         self._event_changed = asyncio.Event()
         self._partial_ids: set[str] = set()
         self._final_ids: set[str] = set()
+        self._projector = TranscriptProjector(call_id)
         self.failure: StreamingTranscriptionError | None = None
 
     async def start(self) -> None:
@@ -153,34 +149,19 @@ class LiveTranscriptionCoordinator:
             try:
                 if event is None:
                     return
-                payload = TranscriptPayload(
-                    segment_id=event.segment_id,
-                    order=event.order,
-                    revision=event.revision,
-                    text=event.text,
-                    speaker_id=None,
-                    speaker_role="unknown",
-                    start_ms=None,
-                    end_ms=None,
-                    language=event.language,
-                )
                 if event.kind == "partial":
                     self._partial_ids.add(event.segment_id)
-                    outgoing: TranscriptServerEvent = TranscriptPartialEvent(
-                        call_id=self._call_id,
-                        seq=await self._next_sequence(),
-                        payload=payload,
-                    )
                 else:
                     if event.segment_id in self._final_ids:
                         continue
                     self._partial_ids.discard(event.segment_id)
                     self._final_ids.add(event.segment_id)
-                    outgoing = TranscriptFinalEvent(
-                        call_id=self._call_id,
-                        seq=await self._next_sequence(),
-                        payload=payload,
-                    )
+                outgoing = await self._projector.project(
+                    event,
+                    self._next_sequence,
+                )
+                if outgoing is None:
+                    continue
                 await self._event_sink(outgoing)
                 self._event_changed.set()
                 if event.kind == "final":

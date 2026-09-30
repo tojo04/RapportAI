@@ -334,3 +334,17 @@ released, and a forced timeout is shown as incomplete.
 
 Task 6 — add deterministic offline transcript replay fixtures using the same
 partial/final handling path.
+
+## Task 6 outcome
+
+- Added fictional demo, no-signal, and repeated-objection fixtures with stable
+  IDs/order, optional timing/language, unknown speakers, and expected signals.
+- Extracted a shared transcript projector used by live and replay flows.
+- Added an offline CLI with injectable sleep; tests prove partial replacement,
+  duplicate-final suppression, and out-of-order completion ordering.
+- Focused verification: 8 replay/coordinator tests passed; the replay CLI ran
+  successfully without microphone, API key, or paid service.
+
+## Next task
+
+Task 7 — detect validated, evidence-backed sales signals from final segments.

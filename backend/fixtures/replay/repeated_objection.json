@@ -1,0 +1,10 @@
+{
+  "name": "repeated-objection",
+  "description": "Two genuinely separate fictional price objections plus a duplicate provider final.",
+  "expected_sales_signals": ["objection", "objection"],
+  "steps": [
+    {"kind":"final","segment_id":"repeat-1","order":0,"revision":1,"text":"The annual price is above our budget.","language":"en"},
+    {"kind":"final","segment_id":"repeat-1","order":0,"revision":1,"text":"duplicate ignored","language":"en"},
+    {"kind":"final","segment_id":"repeat-2","order":1,"revision":1,"text":"Even monthly, that price is still too high for this team.","language":"en"}
+  ]
+}

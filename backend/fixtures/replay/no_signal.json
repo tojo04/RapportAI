@@ -1,0 +1,8 @@
+{
+  "name": "no-signal",
+  "description": "Fictional greeting with no sales signal.",
+  "expected_sales_signals": [],
+  "steps": [
+    {"kind":"final","segment_id":"quiet-1","order":0,"revision":1,"text":"Hello, thanks for joining today.","language":"en"}
+  ]
+}
