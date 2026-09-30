@@ -21,6 +21,8 @@ from app.models.realtime import (
     CallState,
     CallStoppingEvent,
     CallStoppingPayload,
+    CoachSuggestionEvent,
+    CoachSuggestionPayload,
     ClientCommand,
     CreateCallResponse,
     DiagnosticPayload,
@@ -59,6 +61,10 @@ from app.services.sales_detection import (
     OpenAISalesEventClassifier,
     SalesEventClassifier,
 )
+from app.services.coaching import CoachService, LiveCoach, OpenAICoachGenerator
+from app.knowledge.ingestion import OpenAIEmbeddingProvider
+from app.knowledge.retrieval import PostgresSearchBackend, RetrievalService
+from app.storage.database import create_database_engine, create_session_factory
 
 
 router = APIRouter()
@@ -550,6 +556,7 @@ def _create_sales_detector(
     websocket: WebSocket,
     session: LiveCallSession,
     settings: Settings,
+    live_coach: LiveCoach | None = None,
 ) -> LiveSalesDetector | None:
     factory = getattr(
         websocket.app.state,
@@ -567,6 +574,8 @@ def _create_sales_detector(
     if classifier is None:
         return None
 
+    detector: LiveSalesDetector | None = None
+
     async def emit_sales_event(payload: SalesEventPayload) -> None:
         await _enqueue(
             session,
@@ -577,6 +586,8 @@ def _create_sales_detector(
             ),
             settings,
         )
+        if live_coach is not None and detector is not None:
+            await live_coach.submit(payload, detector.recent_segments())
 
     async def emit_warning(message: str) -> None:
         await _enqueue(
@@ -594,11 +605,73 @@ def _create_sales_detector(
             settings,
         )
 
-    return LiveSalesDetector(
+    detector = LiveSalesDetector(
         classifier=classifier,
         event_sink=emit_sales_event,
         warning_sink=emit_warning,
     )
+    return detector
+
+
+def _create_live_coach(
+    websocket: WebSocket,
+    session: LiveCallSession,
+    settings: Settings,
+) -> LiveCoach | None:
+    service_factory = getattr(websocket.app.state, "coach_service_factory", None)
+    service: CoachService | None = None
+    if service_factory is not None:
+        service = service_factory()
+    elif settings.openai_api_key and settings.live_coach_model:
+        sessions = create_session_factory(
+            create_database_engine(settings.database_url)
+        )
+        service = CoachService(
+            RetrievalService(
+                PostgresSearchBackend(sessions),
+                OpenAIEmbeddingProvider(
+                    settings.openai_api_key,
+                    settings.knowledge_embedding_model,
+                    settings.knowledge_embedding_dimensions,
+                ),
+                settings.knowledge_evidence_threshold,
+            ),
+            OpenAICoachGenerator(
+                settings.openai_api_key,
+                settings.live_coach_model,
+            ),
+        )
+    if service is None:
+        return None
+
+    async def emit(payload: CoachSuggestionPayload) -> None:
+        await _enqueue(
+            session,
+            CoachSuggestionEvent(
+                call_id=session.call_id,
+                seq=await session.next_sequence(),
+                payload=payload,
+            ),
+            settings,
+        )
+
+    async def warn(message: str) -> None:
+        await _enqueue(
+            session,
+            WarningEvent(
+                call_id=session.call_id,
+                seq=await session.next_sequence(),
+                payload=DiagnosticPayload(
+                    code="coaching_failed",
+                    message=message,
+                    recoverable=True,
+                    state=session.state,
+                ),
+            ),
+            settings,
+        )
+
+    return LiveCoach(service, emit, warn)
 
 
 async def _shutdown_writer(
@@ -793,6 +866,11 @@ async def live_call_socket(
                             websocket,
                             settings,
                         )
+                        live_coach = _create_live_coach(
+                            websocket,
+                            session,
+                            settings,
+                        )
                         coordinator = LiveTranscriptionCoordinator(
                             call_id=call_id,
                             transcriber=transcriber,
@@ -814,7 +892,9 @@ async def live_call_socket(
                                 websocket,
                                 session,
                                 settings,
+                                live_coach,
                             ),
+                            live_coach=live_coach,
                         )
                         await coordinator.start()
                     except StreamingTranscriptionError as exc:

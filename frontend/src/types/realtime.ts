@@ -108,15 +108,27 @@ export interface SalesEventPayload {
 }
 
 export type SalesEvent = ServerEventEnvelope<'sales.event', SalesEventPayload>;
+export interface CoachSource {
+  chunk_id: string;
+  source_path: string;
+  heading: string;
+  text: string;
+  content_revision: string;
+  corpus_revision: string;
+}
+
+export interface CoachSuggestionPayload {
+  suggestion_id: string;
+  text: string;
+  evidence_segment_ids: string[];
+  source_chunk_ids: string[];
+  source_versions: Record<string, string>;
+  sources: CoachSource[];
+  insufficient_evidence: boolean;
+}
 export type CoachSuggestionEvent = ServerEventEnvelope<
   'coach.suggestion',
-  {
-    suggestion_id: string;
-    text: string;
-    evidence_segment_ids: string[];
-    source_chunk_ids: string[];
-    insufficient_evidence: boolean;
-  }
+  CoachSuggestionPayload
 >;
 export type CallStoppingEvent = ServerEventEnvelope<
   'call.stopping',
@@ -363,6 +375,21 @@ function hasValidPayload(type: ServerEvent['type'], payload: unknown): boolean {
         typeof payload.text === 'string' &&
         isStringArray(payload.evidence_segment_ids) &&
         isStringArray(payload.source_chunk_ids) &&
+        isRecord(payload.source_versions) &&
+        Object.values(payload.source_versions).every(
+          (value) => typeof value === 'string',
+        ) &&
+        Array.isArray(payload.sources) &&
+        payload.sources.every(
+          (source) =>
+            isRecord(source) &&
+            isNonEmptyString(source.chunk_id) &&
+            typeof source.source_path === 'string' &&
+            typeof source.heading === 'string' &&
+            typeof source.text === 'string' &&
+            isNonEmptyString(source.content_revision) &&
+            isNonEmptyString(source.corpus_revision),
+        ) &&
         isBoolean(payload.insufficient_evidence)
       );
     case 'call.stopping':

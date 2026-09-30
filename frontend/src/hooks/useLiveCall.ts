@@ -15,6 +15,7 @@ import {
   type StopCommand,
   type TranscriptPayload,
   type SalesEventPayload,
+  type CoachSuggestionPayload,
 } from '../types/realtime';
 
 const MAX_SOCKET_BUFFERED_BYTES = 1_048_576;
@@ -55,6 +56,7 @@ export interface LiveCallViewModel {
   error: string | null;
   transcript: LiveTranscriptSegment[];
   signals: SalesEventPayload[];
+  suggestions: CoachSuggestionPayload[];
   start: () => Promise<void>;
   stop: () => Promise<void>;
 }
@@ -107,6 +109,7 @@ export function useLiveCall(
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<LiveTranscriptSegment[]>([]);
   const [signals, setSignals] = useState<SalesEventPayload[]>([]);
+  const [suggestions, setSuggestions] = useState<CoachSuggestionPayload[]>([]);
 
   const mountedRef = useRef(false);
   const statusRef = useRef<CallState>('idle');
@@ -292,6 +295,7 @@ export function useLiveCall(
       setBytesReceived(0);
       setTranscript([]);
       setSignals([]);
+      setSuggestions([]);
     }
 
     try {
@@ -410,6 +414,17 @@ export function useLiveCall(
                 );
               }
               break;
+            case 'coach.suggestion':
+              if (mountedRef.current) {
+                setSuggestions((current) =>
+                  current.some(
+                    (item) => item.suggestion_id === event.payload.suggestion_id,
+                  )
+                    ? current
+                    : [...current, event.payload],
+                );
+              }
+              break;
             case 'call.stopping':
               updateStatus('stopping');
               break;
@@ -468,6 +483,7 @@ export function useLiveCall(
     error,
     transcript,
     signals,
+    suggestions,
     start,
     stop,
   };

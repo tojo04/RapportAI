@@ -10,6 +10,7 @@ from app.services.streaming_transcription import (
     TranscriptEvent,
 )
 from app.services.sales_detection import DetectionSegment, LiveSalesDetector
+from app.services.coaching import LiveCoach
 
 
 class LiveCoordinatorError(RuntimeError):
@@ -33,6 +34,7 @@ class LiveTranscriptionCoordinator:
         queue_timeout_seconds: float,
         finalization_timeout_seconds: float,
         sales_detector: LiveSalesDetector | None = None,
+        live_coach: LiveCoach | None = None,
     ) -> None:
         self._call_id = call_id
         self._transcriber = transcriber
@@ -41,6 +43,7 @@ class LiveTranscriptionCoordinator:
         self._queue_timeout = queue_timeout_seconds
         self._finalization_timeout = finalization_timeout_seconds
         self._sales_detector = sales_detector
+        self._live_coach = live_coach
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue(queue_size)
         self._transcript_queue: asyncio.Queue[TranscriptEvent | None] = (
             asyncio.Queue(queue_size)
@@ -216,6 +219,8 @@ class LiveTranscriptionCoordinator:
         self._closed = True
         if self._sales_detector is not None:
             await self._sales_detector.close()
+        if self._live_coach is not None:
+            await self._live_coach.stop()
         await self._transcriber.close()
         for queue in (self._audio_queue, self._transcript_queue, self._semantic_queue):
             try:

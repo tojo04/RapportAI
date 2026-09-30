@@ -14,7 +14,7 @@ Last updated: 2026-09-30
 - [x] Task 7 — Detect live sales events from final context
 - [x] Task 8 — Introduce PostgreSQL + pgvector and ingest knowledge
 - [x] Task 9 — Implement and evaluate retrieval
-- [ ] Task 10 — Add source-grounded live coaching
+- [x] Task 10 — Add source-grounded live coaching
 - [ ] Task 11 — Persist active calls and add history APIs
 - [ ] Task 12 — Reuse V1 analysis and scoring after live calls
 - [ ] Task 13 — Add Redis for bounded temporary context
@@ -393,3 +393,16 @@ Task 9 — implement exact active-corpus retrieval and labeled evaluation.
 ## Next task
 
 Task 10 — add source-grounded live text coaching.
+
+## Task 10 outcome
+
+- Connected eligible detected signals to active-corpus retrieval and structured
+  coaching with bounded transcript/evidence context.
+- Validates every transcript/chunk citation, stores source snapshots/versions,
+  and requires explicit insufficient-evidence handling.
+- Added per-call deduplication, cooldown/concurrency bounds, stop cancellation,
+  recoverable warnings, and expandable source details in React.
+
+## Next task
+
+Task 11 — persist live calls and expose bounded history APIs.

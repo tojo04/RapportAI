@@ -172,7 +172,18 @@ class CoachSuggestionPayload(ProtocolModel):
     text: str
     evidence_segment_ids: list[Identifier]
     source_chunk_ids: list[Identifier]
+    source_versions: dict[Identifier, Identifier] = Field(default_factory=dict)
+    sources: list["CoachSource"] = Field(default_factory=list)
     insufficient_evidence: bool
+
+
+class CoachSource(ProtocolModel):
+    chunk_id: Identifier
+    source_path: str
+    heading: str
+    text: str
+    content_revision: Identifier
+    corpus_revision: Identifier
 
 
 class CoachSuggestionEvent(ServerEventBase):

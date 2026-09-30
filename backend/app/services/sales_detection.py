@@ -221,6 +221,9 @@ class LiveSalesDetector:
             await asyncio.gather(self._task, return_exceptions=True)
             self._task = None
 
+    def recent_segments(self) -> list[DetectionSegment]:
+        return self._window()
+
     async def _run(self) -> None:
         while not self._closed:
             await self._wake.wait()

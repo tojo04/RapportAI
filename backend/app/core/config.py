@@ -30,6 +30,7 @@ class Settings:
     live_stt_model: str = "gpt-live-transcribe"
     live_stt_finalization_timeout_ms: int = 2_000
     live_classification_model: str | None = None
+    live_coach_model: str | None = None
     database_url: str = (
         "postgresql+psycopg://rapportai:rapportai@localhost:5432/rapportai"
     )
@@ -149,6 +150,7 @@ def get_settings() -> Settings:
         live_classification_model=_optional_environment_value(
             "LIVE_CLASSIFICATION_MODEL"
         ),
+        live_coach_model=_optional_environment_value("LIVE_COACH_MODEL"),
         database_url=(
             os.getenv(
                 "DATABASE_URL",
