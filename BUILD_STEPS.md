@@ -1,972 +1,496 @@
-# RapportAI — Codex Build Steps
+# RapportAI V2 — build over the existing Sales Call Analyzer with Codex
 
-This file contains the recommended order for building the project with Codex.
+## How to use these files
 
-The project uses:
+You already have V1: React + FastAPI, recording upload, transcription, validated analysis, and Python scoring. This guide extends that repository. It does not ask Codex to build a second application or replace the upload flow.
 
-- React + Vite + TypeScript + Tailwind CSS for the frontend
-- FastAPI + Python for the backend
-- OpenAI APIs for transcription and structured analysis
-- Pydantic for response validation
-- Deterministic Python scoring
+The source repository was not supplied with this guide. Paths, endpoint names, installed versions, and commands must be resolved from your repository in Task 0. Example paths below describe responsibilities; keep existing names where practical.
 
-Build one task at a time. Review the diff, run the project, run tests, and create a Git commit before moving to the next task.
+Use AGENTS.md for permanent rules and this file for one task at a time. A task can take more than one Codex turn. Complete its acceptance checks before moving on. Do not paste the whole guide and request all stages in one run.
 
----
+### First: checkpoint V1 and install the V2 instructions
 
-## 0. Final product
+In the existing repository, inspect the changes before saving a baseline:
 
-The completed application will work like this:
-
-```text
-User uploads MP3/WAV
-        ↓
-React sends multipart request
-        ↓
-FastAPI validates the file
-        ↓
-Audio is transcribed
-        ↓
-Transcript is analyzed into structured data
-        ↓
-Python calculates an explainable score
-        ↓
-React displays results
-```
-
-The result screen should contain:
-
-- Transcript
-- Call summary
-- Customer needs
-- Questions asked
-- Objections
-- Salesperson responses
-- Follow-up actions
-- Sentiment
-- Call-quality score
-- Component score breakdown
-
----
-
-## 1. Create the repository
-
-Run:
-
-```powershell
-mkdir RapportAI
-cd RapportAI
-git init
-code .
-```
-
-Copy `AGENTS.md` and this file into the repository root.
-
-Create an initial checkpoint:
-
-```powershell
-git add AGENTS.md BUILD_STEPS.md
-git commit -m "docs: add project instructions and build plan"
-```
-
----
-
-## 2. Task 1 — Scaffold the monorepo
-
-### Codex prompt
-
-```text
-Read AGENTS.md completely before making changes.
-
-Create the initial RapportAI repository structure.
-
-Frontend requirements:
-- React
-- Vite
-- TypeScript
-- Tailwind CSS
-- Vitest
-- React Testing Library
-
-Backend requirements:
-- Python 3.11+
-- FastAPI
-- Uvicorn
-- Pydantic
-- OpenAI Python SDK
-- python-dotenv
-- python-multipart
-- pytest
-- httpx for FastAPI tests
-
-Create the folder structure specified in AGENTS.md.
-
-For this task only:
-- The React page should show the project title and description.
-- FastAPI should expose GET /api/health returning {"status": "ok"}.
-- Configure CORS for http://localhost:5173 through an environment setting.
-- Add .env.example and .gitignore files.
-- Add initial frontend and backend tests.
-- Add a root README with basic placeholder setup sections.
-
-Do not implement file upload, transcription, analysis, or scoring yet.
-Do not add a database or authentication.
-
-Run the available tests and report all commands and results.
-```
-
-### Expected result
-
-- Frontend opens successfully.
-- Backend starts successfully.
-- `/api/health` works.
-- Frontend and backend tests run.
-
-### Local commands
-
-Backend:
-
-```powershell
-cd backend
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-Frontend, in another terminal:
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-### Verification
-
-Open:
-
-```text
-Frontend: http://localhost:5173
-Backend docs: http://localhost:8000/docs
-Health: http://localhost:8000/api/health
-```
-
-### Commit
-
-```powershell
-git add .
-git commit -m "chore: scaffold React and FastAPI application"
-```
-
----
-
-## 3. Task 2 — Define the backend data models
-
-Create the structured data contract before making any model API call.
-
-### Codex prompt
-
-```text
-Read AGENTS.md and inspect the current backend.
-
-Implement the Pydantic models in backend/app/models/analysis.py.
-
-Required models:
-
-1. ObjectionResponse
-- objection: non-empty string
-- response: string or null
-
-2. CallAnalysis
-- summary: non-empty string
-- customer_needs: list of strings
-- questions_asked: list of strings
-- objections: list of ObjectionResponse
-- follow_up_actions: list of strings
-- sentiment: positive, neutral, mixed, or negative
-- next_step_confirmed: boolean
-- objection_handling_quality: integer from 0 to 5
-- discovery_quality: integer from 0 to 5
-- communication_clarity: integer from 0 to 5
-
-3. ScoreBreakdown
-- discovery
-- objection_handling
-- communication_clarity
-- confirmed_next_step
-- follow_up_actions
-
-4. ScoreResult
-- total: integer from 0 to 100
-- category: Excellent, Good, Needs Improvement, or Poor
-- breakdown: ScoreBreakdown
-
-5. AnalyzeCallResponse
-- transcript
-- analysis
-- score
-
-Add tests for:
-- valid model construction
-- invalid sentiment
-- ratings below 0 or above 5
-- invalid score total
-- invalid category
-- required non-empty fields
-
-Do not implement scoring or OpenAI calls in this task.
-Run backend tests when finished.
-```
-
-### Concepts to understand
-
-Before continuing, be able to explain:
-
-- Why Pydantic validation is needed for LLM output
-- Difference between a Python dictionary and a validated model
-- Why the API response needs a stable schema
-- How a TypeScript frontend benefits from a stable backend contract
-
-### Commit
-
-```powershell
-git add backend
-git commit -m "feat: add structured analysis response models"
-```
-
----
-
-## 4. Task 3 — Implement deterministic scoring
-
-The language model will provide small 0–5 assessments. Python will produce the final score.
-
-### Codex prompt
-
-```text
-Read AGENTS.md and inspect the existing analysis models.
-
-Implement backend/app/scoring/calculator.py.
-
-Create this pure function:
-
-calculate_call_score(analysis: CallAnalysis) -> ScoreResult
-
-Use these maximum values:
-- Discovery quality: 25
-- Objection handling quality: 25
-- Communication clarity: 20
-- Confirmed next step: 20
-- One or more follow-up actions: 10
-
-Convert 0-to-5 quality values proportionally to their maximum values.
-Use a documented and consistent integer rounding method.
-
-Score categories:
-- 85 to 100: Excellent
-- 70 to 84: Good
-- 50 to 69: Needs Improvement
-- 0 to 49: Poor
-
-Requirements:
-- No API calls
-- No FastAPI imports
-- No side effects
-- Full type annotations
-- Return a ScoreResult model
-
-Add comprehensive tests for:
-- zero score
-- maximum score
-- each individual component
-- category boundaries 49/50, 69/70, and 84/85
-- follow-up action present versus absent
-- confirmed next step true versus false
-
-Run backend tests.
-```
-
-### Important interview explanation
-
-Use this explanation:
-
-> The LLM extracts semantic evidence and provides bounded quality ratings, but the final score is calculated by deterministic business logic. This makes the result reproducible, testable, and easier to audit.
-
-### Commit
-
-```powershell
-git add backend
-git commit -m "feat: add deterministic call scoring"
-```
-
----
-
-## 5. Task 4 — Implement the transcript-analysis service
-
-Start with a plain transcript. Audio upload is not needed yet.
-
-### Codex prompt
-
-```text
-Read AGENTS.md and inspect the backend models and configuration.
-
-Implement backend/app/services/analysis.py.
-
-Requirements:
-- Accept a transcript string.
-- Reject empty or whitespace-only transcripts.
-- Use the OpenAI Python SDK.
-- Read the analysis model name from configuration.
-- Request structured output matching CallAnalysis.
-- Return a validated CallAnalysis object.
-- Store the system instructions in a named constant.
-- Never calculate the final score in this service.
-- Do not silently repair invalid model output.
-- Raise a clear service-level exception when analysis fails.
-- Never expose API keys or raw internal exception details to API users.
-
-The analysis instructions must require the model to:
-- use only evidence in the transcript
-- avoid invented facts
-- use empty lists when information is absent
-- distinguish customer objections from normal questions
-- use null when an objection received no response
-- make quality judgments only from the transcript
-- return data matching the schema exactly
-
-Make the OpenAI client replaceable or mockable in tests.
-
-Add unit tests using mocks. Tests must not make real network requests.
-Test:
-- successful validated result
-- empty transcript rejection
-- SDK failure
-- invalid structured output
-
-Do not add an HTTP route yet.
-Run backend tests.
-```
-
-### Manual test option
-
-Create a temporary local script only when useful, or use a Python shell to call the service with a short sample transcript.
-
-Example transcript:
-
-```text
-Salesperson: What problem are you trying to solve?
-Customer: Our team loses time manually preparing weekly reports.
-Salesperson: Our platform automates those reports.
-Customer: It sounds useful, but the price may be too high.
-Salesperson: We can start with a smaller plan and upgrade later.
-Customer: Send me a proposal by Friday.
-Salesperson: I will email the proposal tomorrow and call you on Friday.
-```
-
-Do not commit real API keys or generated outputs.
-
-### Commit
-
-```powershell
-git add backend
-git commit -m "feat: add structured transcript analysis service"
-```
-
----
-
-## 6. Task 5 — Implement the transcription service
-
-### Codex prompt
-
-```text
-Read AGENTS.md and inspect the backend configuration and service conventions.
-
-Implement backend/app/services/transcription.py.
-
-Requirements:
-- Accept a pathlib.Path or clearly typed local path.
-- Support MP3 and WAV files.
-- Reject missing files.
-- Reject empty files.
-- Read the transcription model name from configuration.
-- Use the OpenAI Audio Transcription API.
-- Return a non-empty transcript string.
-- Raise a clear service-level exception on failure.
-- Do not import FastAPI.
-- Do not delete files supplied by the caller.
-- Keep the OpenAI client mockable.
-
-Add unit tests using temporary files and mocked API responses.
-Tests must cover:
-- successful MP3 transcription
-- successful WAV transcription
-- unsupported extension
-- missing file
-- empty file
-- empty transcription response
-- SDK failure
-
-No test may make a real API call.
-Run backend tests.
-```
-
-### Commit
-
-```powershell
-git add backend
-git commit -m "feat: add audio transcription service"
-```
-
----
-
-## 7. Task 6 — Implement the analyze-call API endpoint
-
-This task connects validation, temporary-file handling, transcription, analysis, and scoring.
-
-### Codex prompt
-
-```text
-Read AGENTS.md and inspect all backend modules.
-
-Implement POST /api/analyze-call in backend/app/api/routes.py.
-
-The endpoint must:
-- Accept one multipart form field named file.
-- Accept only MP3 and WAV.
-- reject empty files.
-- Enforce MAX_UPLOAD_MB from configuration.
-- Create a safe temporary file without trusting the original filename.
-- Call the transcription service.
-- Call the transcript-analysis service.
-- Calculate the deterministic score.
-- Return AnalyzeCallResponse.
-- Remove the temporary file in a finally block.
-- Return clear HTTP errors.
-- Avoid exposing API keys or raw stack traces.
-
-Keep route logic small. Extract validation helpers if needed, but do not over-engineer.
-
-Add API tests using FastAPI TestClient and mocked services.
-Tests must cover:
-- successful request
-- unsupported extension
-- empty upload
-- oversized upload
-- transcription failure
-- analysis failure
-- expected response shape
-- temporary-file cleanup where practical
-
-No test may call a real OpenAI endpoint.
-Run all backend tests.
-```
-
-### Manual API test
-
-Start the backend:
-
-```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-uvicorn app.main:app --reload
-```
-
-Use the Swagger UI:
-
-```text
-http://localhost:8000/docs
-```
-
-Select `POST /api/analyze-call`, upload a short audio file, and execute the request.
-
-### Commit
-
-```powershell
-git add backend
-git commit -m "feat: add call analysis API endpoint"
-```
-
----
-
-## 8. Task 7 — Define frontend types and API client
-
-Do not begin with the full UI. First make the frontend/backend contract explicit.
-
-### Codex prompt
-
-```text
-Read AGENTS.md and inspect the backend response models and current frontend.
-
-Implement the frontend data contract and API client.
-
-In frontend/src/types/analysis.ts, add strict TypeScript types matching:
-- ObjectionResponse
-- CallAnalysis
-- ScoreBreakdown
-- ScoreResult
-- AnalyzeCallResponse
-
-In frontend/src/services/api.ts, implement:
-
-analyzeCall(file: File): Promise<AnalyzeCallResponse>
-
-Requirements:
-- Send multipart/form-data to POST /api/analyze-call.
-- Do not manually set the multipart Content-Type boundary.
-- Read the backend base URL from a Vite environment variable.
-- Parse successful JSON responses.
-- Parse FastAPI error responses.
-- Throw a useful Error for network, HTTP, and malformed-response failures.
-- Do not use any unless absolutely unavoidable.
-
-Add frontend unit tests for:
-- successful response
-- FastAPI detail error
-- network failure
-- correct form field name
-
-Do not build the complete results UI yet.
-Run frontend tests, linting, and type checking.
-```
-
-### Environment file
-
-Frontend `.env.example`:
-
-```env
-VITE_API_BASE_URL=http://localhost:8000
-```
-
-### Commit
-
-```powershell
-git add frontend
-git commit -m "feat: add typed frontend API client"
-```
-
----
-
-## 9. Task 8 — Build the upload workflow
-
-### Codex prompt
-
-```text
-Read AGENTS.md and inspect the frontend types and API client.
-
-Implement the React audio-upload workflow.
-
-Create or update:
-- AudioUploader.tsx
-- ErrorMessage.tsx
-- App.tsx
-
-Requirements:
-- Accept .mp3 and .wav files.
-- Display the selected filename and file size.
-- Reject unsupported files before submission.
-- Disable Analyze Call when no valid file is selected.
-- Show a clear loading state while the request is running.
-- Prevent duplicate submissions while loading.
-- Call analyzeCall(file) from the API service.
-- Show user-facing errors.
-- Store the successful response in typed React state.
-- Do not render the complete result details yet; show a simple success placeholder.
-- Keep API code outside React components.
-- Make the layout responsive and professional using Tailwind.
-
-Add tests for:
-- disabled state with no file
-- valid file selection
-- invalid extension
-- loading state
-- successful request
-- failed request
-
-Run tests, linting, and type checking.
-```
-
-### Commit
-
-```powershell
-git add frontend
-git commit -m "feat: add audio upload workflow"
-```
-
----
-
-## 10. Task 9 — Build the result dashboard
-
-### Codex prompt
-
-```text
-Read AGENTS.md and inspect the AnalyzeCallResponse type and current upload flow.
-
-Implement the complete result dashboard.
-
-Create or update:
-- AnalysisResults.tsx
-- ScoreCard.tsx
-- ScoreBreakdown.tsx
-- App.tsx
-
-Display:
-- total score out of 100
-- score category
-- discovery score out of 25
-- objection handling score out of 25
-- communication clarity score out of 20
-- confirmed next step score out of 20
-- follow-up action score out of 10
-- summary
-- sentiment
-- customer needs
-- questions asked
-- objections and responses
-- follow-up actions
-- transcript
-
-Requirements:
-- Render empty lists with a friendly "None identified" message.
-- Render an unanswered objection clearly when response is null.
-- Make the transcript easy to expand, collapse, or scan.
-- Keep score visualization simple; do not add a chart library.
-- Use semantic HTML and accessible labels.
-- Keep components focused and typed.
-- Preserve loading and error behavior.
-
-Add tests for:
-- score and category rendering
-- component breakdown
-- empty lists
-- null objection response
-- transcript rendering
-- sentiment rendering
-
-Run tests, linting, type checking, and the production build.
-```
-
-### Commit
-
-```powershell
-git add frontend
-git commit -m "feat: add sales call result dashboard"
-```
-
----
-
-## 11. Task 10 — Improve reliability and error handling
-
-### Codex prompt
-
-```text
-Read AGENTS.md and perform a reliability review of both frontend and backend.
-
-Inspect for:
-- invalid or oversized files
-- temporary files not removed
-- OpenAI failures
-- malformed structured output
-- empty transcripts
-- duplicate frontend submissions
-- stale result state after a failed request
-- environment variables missing
-- overly broad exception handling
-- secrets exposed in logs or responses
-- CORS configuration issues
-- mismatch between Python models and TypeScript types
-
-First report the findings with severity and file locations.
-Then fix only high- and medium-severity findings.
-Do not add unrelated features or new infrastructure.
-Add regression tests for every fixed behavior.
-Run the complete backend and frontend verification suites.
-```
-
-### Commit
-
-```powershell
-git add .
-git commit -m "fix: improve upload and analysis reliability"
-```
-
----
-
-## 12. Task 11 — Complete the README
-
-### Codex prompt
-
-```text
-Read AGENTS.md and inspect the complete repository.
-
-Rewrite README.md as accurate project documentation.
-
-Include:
-- project overview
-- problem being solved
-- feature list
-- architecture diagram using Mermaid
-- technology stack
-- repository structure
-- prerequisites
-- backend setup commands for Windows PowerShell
-- frontend setup commands
-- environment variable setup
-- how to run frontend and backend
-- how to run tests
-- API endpoint documentation
-- deterministic scoring formula
-- explanation of structured output validation
-- limitations
-- possible future improvements
-- short interview explanation of the architecture
-
-Only document behavior that actually exists in the repository.
-Do not claim deployment, authentication, databases, or real-time support.
-```
-
-### Commit
-
-```powershell
-git add README.md
-git commit -m "docs: complete setup and architecture documentation"
-```
-
----
-
-## 13. Task 12 — Final code review
-
-### First Codex prompt: review only
-
-```text
-Read AGENTS.md and perform a strict final review of the entire repository.
-
-Do not modify files yet.
-
-Review for:
-- secrets accidentally committed
-- incorrect OpenAI SDK usage
-- API response validation gaps
-- temporary-file leaks
-- unsafe filename handling
-- upload-size enforcement bugs
-- frontend/backend type mismatches
-- business logic inside React components
-- business logic inside FastAPI routes
-- tests that make real network calls
-- tests that do not test meaningful behavior
-- missing loading and error states
-- inaccessible UI controls
-- unnecessary dependencies
-- dead code
-- code that is too complex to explain in an interview
-
-Return findings ordered by severity.
-For each finding include:
-- severity
-- file and symbol
-- exact problem
-- practical consequence
-- recommended correction
-```
-
-### Second Codex prompt: fix findings
-
-```text
-Fix the high- and medium-severity findings from the previous review.
-
-Constraints:
-- Do not add new product features.
-- Do not change the public API shape unless required to fix a correctness problem.
-- Do not perform unrelated refactoring.
-- Add regression tests for fixed defects.
-- Run all backend and frontend checks.
-- Report each changed file and the command results.
-```
-
-### Final commit
-
-```powershell
-git add .
-git commit -m "chore: complete final quality review"
-```
-
----
-
-## 14. Required verification commands
-
-### Backend
-
-```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-pytest
-```
-
-Optionally add linting and formatting if configured:
-
-```powershell
-ruff check .
-ruff format --check .
-```
-
-### Frontend
-
-```powershell
-cd frontend
-npm run test
-npm run lint
-npm run typecheck
-npm run build
-```
-
-If `typecheck` is not defined, use:
-
-```powershell
-npx tsc --noEmit
-```
-
-### Manual end-to-end verification
-
-1. Start the backend.
-2. Start the frontend.
-3. Upload a short WAV file.
-4. Confirm the loading state appears.
-5. Confirm a transcript is returned.
-6. Confirm all structured sections render.
-7. Confirm score components add to the total.
-8. Upload an invalid file and confirm a useful error appears.
-9. Refresh and repeat with another audio file.
-10. Check that no uploaded audio remains in the repository.
-
----
-
-## 15. How to review Codex changes
-
-After every task:
-
-```text
-1. Read Codex's summary.
-2. Open every changed file.
-3. Inspect the Git diff.
-4. Ask for explanations of unfamiliar code.
-5. Run the feature manually.
-6. Run relevant tests.
-7. Commit only when the task works.
-```
-
-Useful Git commands:
-
-```powershell
-git status
+```bash
+git status --short
+git diff --stat
 git diff
-git diff --staged
-git log --oneline --decorate -10
 ```
 
-Never accept a change merely because the code looks plausible.
+Stage the intended project files explicitly, inspect the staged diff, and commit the working V1 if it is not already committed. Do not stage .env, private recordings, credentials, or generated environments. Use your actual filenames; do not paste placeholder paths literally.
+
+```bash
+git diff --cached
+git commit -m "release: preserve working upload analyzer"
+git tag v1.0-upload-analyzer
+git switch -c realtime-v2
+```
+
+Skip the commit if the working tree is already clean and V1 is committed. Reuse an existing baseline tag/branch if present; do not overwrite tags. If V1 is not working, document its existing failures before proceeding.
+
+To preserve existing instructions, initially save the supplied AGENTS.md as AGENTS_V2.md and this guide as BUILD_STEPS_V2.md in the repository root. Keep any existing AGENTS.md/BUILD_STEPS.md available while Codex reconciles them in Task 0. Afterwards, the active root instructions should be AGENTS.md and the active guide BUILD_STEPS.md. Archive old guides under docs/v1/ if useful, without putting V1 restrictions in an active nested AGENTS.md.
+
+Start Codex in that repository and use the Task 0 prompt. This avoids blindly replacing repository-specific rules.
+
+### Loop after each task
+
+1. Give Codex the single task prompt.
+2. Inspect the diff and actual validation results.
+3. Run the described manual check if it needs a browser or real service.
+4. Ask for an explanation of unfamiliar code.
+5. Commit the intended changes using the suggested message.
+6. Continue with the next task.
+
+The prompts authorize relevant reversible implementation, tests, and local checks. Credentials are kept out of prompts. Paid API smoke tests are opt-in; mocked tests do not require them. Codex should report a missing key as an unperformed real check, while finishing the fake-provider implementation and tests.
+
+### Intended build sequence
+
+| Stage | Outcome | Main dependency |
+| --- | --- | --- |
+| 0 | Existing-code audit and V1 baseline | Current repository |
+| 1 | Typed protocol and live-call lifecycle | Audit |
+| 2 | React microphone → FastAPI transport | Protocol |
+| 3 | Correct PCM capture and bounded transport | Transport |
+| 4 | Streaming STT adapter | PCM contract |
+| 5 | Reliable live transcript and stop/drain | STT adapter |
+| 6 | Offline transcript replay | Transcript protocol |
+| 7 | Live sales-event detection | Finalized transcript windows |
+| 8 | PostgreSQL + pgvector knowledge ingestion | Synthetic documents |
+| 9 | Tested vector retrieval | Ingested corpus |
+| 10 | Grounded live coaching | Events + retrieval |
+| 11 | Durable call history | Proven live pipeline + PostgreSQL |
+| 12 | Live-call post-analysis using V1 | Final transcripts + history |
+| 13 | Redis session context | Working in-memory session store |
+| 14 | Complete dashboard | Stable live/history contracts |
+| 15 | Hindi/Hinglish evaluation; speaker limitations | Working English flow |
+| 16 | Measured latency and controlled load | Full pipeline |
+| 17 | Docker, CI, final review and demo | All core behavior |
+
+Test harnesses and metrics hooks can be introduced earlier as needed. The table is a feature order, not an instruction to delay tests or cleanup until the end.
 
 ---
 
-## 16. Prompts for understanding the generated code
+## Task 0 — Audit V1 and reconcile the instruction files
 
-After each task, give Codex this prompt:
+Paste into Codex:
 
 ```text
-Explain the code added in the previous task as if I must defend it in a technical interview.
+This is an existing working Sales Call Analyzer. Extend it; do not scaffold a replacement.
 
-For every changed file explain:
-1. Its responsibility.
-2. Important functions, classes, and types.
-3. Input and output data.
-4. Why this implementation was selected.
-5. One reasonable alternative.
-6. Failure cases.
-7. How the tests verify it.
-8. Questions an interviewer may ask.
+Read all existing applicable AGENTS.md files, AGENTS_V2.md, and BUILD_STEPS_V2.md. Inspect Git status, frontend/backend entry points, routes, schema models, services, scoring, tests, dependency manifests, environment examples, and existing docs. Do not print secrets or read private recordings.
 
-Use concrete references to the current code.
+Perform Task 0 only:
+- Merge the supplied V2 rules into root AGENTS.md. Preserve unrelated repository rules; replace only V1 scope restrictions superseded by this authorized upgrade.
+- Adopt the V2 task guide as BUILD_STEPS.md while preserving the old guide under docs/v1/ if useful.
+- Create docs/V1_BASELINE.md mapping actual V1 paths, API contracts, CallAnalysis schema, score weights/categories, dependency tools, and run/test commands.
+- Create docs/V2_ARCHITECTURE.md mapping new responsibilities onto the existing layout. Identify which V1 analysis/scoring functions will be reused.
+- Create docs/BUILD_PROGRESS.md with the task checklist, decisions, baseline results, and next task.
+- Reconcile conflicting nested instructions narrowly and explain each change.
+- Run existing non-paid checks. Record pre-existing failures separately.
+
+Do not change application source code or install a new stack. Report actual findings, missing assumptions, and the commands we will use for future tasks. Stop after Task 0.
 ```
 
-Then use:
+Pass criteria: You know which code produces V1's transcript, analysis, and score; the active instructions agree with V2; baseline failures are documented. No upload contract changed.
+
+Suggested commit: `docs: map v1 and define incremental realtime upgrade`
+
+## Task 1 — Define the protocol and session state machine
 
 ```text
-Quiz me on this implementation one question at a time.
-Do not reveal the answer until I respond.
-Focus on React, TypeScript, FastAPI, Pydantic, multipart uploads,
-temporary files, mocked tests, structured LLM output, and deterministic scoring.
+Read AGENTS.md, BUILD_STEPS.md Task 1, and docs/V1_BASELINE.md. Implement Task 1 only in the existing layout.
+
+Define typed Pydantic server/client events, matching TypeScript discriminated unions with runtime validation, and docs/realtime-protocol.md. Use the envelope and fields from AGENTS.md. Keep segment IDs stable across partial/final updates and separate segment order from server event sequence.
+
+Add session creation and /ws/calls/{call_id} with an in-memory store. Implement ready/start/stop/ping and states idle, connecting, live, stopping, ended, interrupted, failed. Return a backend-generated call ID. Add one per-call outbound writer. Do not connect an AI provider yet; reject binary audio until Task 2.
+
+Validate Origin, missing sessions, invalid versions, malformed payloads, illegal states, duplicate start/stop commands, and disconnect cleanup. Use bounded queues and configurable limits. Document the single-worker baseline and no live resume policy.
+
+Add meaningful protocol/state tests, run them plus V1 checks relevant to route changes, and update BUILD_PROGRESS.md. Report commands and outcomes. Stop here.
 ```
 
----
+Pass criteria: A fake client can create/start/stop a session; invalid input is rejected; duplicate stop is harmless; no orphan session tasks remain. A call ID is not represented as authentication.
 
-## 17. Features to add only after the core project works
+Suggested commit: `feat: add live call protocol and session lifecycle`
 
-Choose at most one of these as an optional extension:
-
-### Option A — Speaker labels
-
-Display salesperson and customer labels when supported by the transcription output.
-
-### Option B — Downloadable report
-
-Allow the user to download the completed analysis as JSON or a simple PDF.
-
-### Option C — Demo mode
-
-Provide a sample transcript that can be analyzed without uploading audio.
-
-### Option D — Conversation timeline
-
-Group detected needs, objections, and follow-up commitments in conversation order.
-
-Do not implement optional features until the required end-to-end workflow is complete and tested.
-
----
-
-## 18. Project completion checklist
-
-- [ ] React frontend loads.
-- [ ] FastAPI backend loads.
-- [ ] Health endpoint works.
-- [ ] MP3 and WAV files can be selected.
-- [ ] Invalid file types are rejected.
-- [ ] Upload-size limit works.
-- [ ] Audio transcription works.
-- [ ] Transcript analysis returns validated structured data.
-- [ ] Final score is deterministic.
-- [ ] Score breakdown adds up correctly.
-- [ ] All result sections render.
-- [ ] Empty results render gracefully.
-- [ ] Temporary files are removed.
-- [ ] No API key is committed.
-- [ ] Backend tests pass.
-- [ ] Frontend tests pass.
-- [ ] Type checking passes.
-- [ ] Frontend production build passes.
-- [ ] README setup steps are accurate.
-- [ ] You can explain every major file.
-
----
-
-## 19. Two-minute interview explanation
-
-Use this structure when presenting the project:
+## Task 2 — Prove browser-to-backend audio transport
 
 ```text
-I built a sales-call analysis application with a React frontend and a FastAPI backend.
-The user uploads an MP3 or WAV file, which is sent as multipart form data to FastAPI.
-The backend stores it only temporarily and sends it to a transcription model.
-The resulting transcript is passed to a second model that returns structured sales information matching a Pydantic schema.
-I validate the model output instead of trusting free-form text.
-The final quality score is not generated directly by the model; it is calculated using deterministic Python logic, which makes it testable and explainable.
-The backend returns one typed JSON response, and React displays the score, breakdown, summary, needs, objections, follow-ups, and transcript.
-I also added mocked tests so the test suite does not make paid external API calls.
+Read AGENTS.md and perform BUILD_STEPS.md Task 2 only.
+
+Add a live-call entry point alongside the existing upload UI, a useLiveCall hook, Start/Stop controls, elapsed time, connection status, and concise errors. Capture microphone audio and send bounded binary frames to the existing call WebSocket. MediaRecorder is allowed for this transport-only task; label the encoding accurately and document that it will be replaced by PCM in Task 3.
+
+Backend receives frames, validates state/size, counts bytes, and sends throttled audio.ack diagnostics. It does not transcribe, decode each blob as an independent recording, or call an LLM. Add max call duration and browser bufferedAmount protection.
+
+Release microphone tracks and socket resources on stop, start failure, permission denial, network loss, and unmount. Prevent duplicate capture under React StrictMode. Keep microphone capture separate from presentation components.
+
+Test fake capture/socket lifecycle and backend frame limits; run typecheck/build and relevant V1 checks. Update protocol docs and BUILD_PROGRESS.md. Stop here.
 ```
 
-Be prepared to explain why:
+Manual check: Start, speak for 10–20 seconds, see byte count rise, then stop. The browser microphone indicator turns off. Repeat twice. Deny microphone permission once and verify useful recovery.
 
-- the frontend does not call OpenAI directly
-- Pydantic validation is required
-- temporary files are cleaned up
-- scoring is deterministic
-- external API calls are mocked in tests
-- no database was needed for the MVP
+Pass criteria: Transport works without AI, queues are bounded, Stop releases capture, and V1 upload still opens and works.
+
+Suggested commit: `feat: stream microphone audio to fastapi`
+
+## Task 3 — Replace demo capture with correct PCM streaming
+
+```text
+Read AGENTS.md and perform Task 3 only. Inspect current official OpenAI streaming transcription audio requirements before fixing the contract. Record the reference and chosen format in docs/STT_PROVIDER.md.
+
+Replace the MediaRecorder transport demo with an AudioWorklet path. Implement mono conversion, continuous resampling from the actual AudioContext rate, float clipping, and signed 16-bit little-endian PCM encoding. Baseline target is 24 kHz mono and approximately 100 ms frames, subject to the verified API contract.
+
+Carry resampling/frame state across worklet blocks and flush the final short frame before stop. Do not assume browser constraints set the hardware sample rate. Ensure audio before start is rejected; backend validates frame bounds/alignment and encoding metadata. Keep the worklet in the appropriate Vite-served location.
+
+Test known PCM samples, clipping, byte order, resampling duration at 44.1/48 kHz, continuity across block boundaries, partial-frame flush, congestion, and resource cleanup. No paid API calls. Update docs and progress. Stop here.
+```
+
+Pass criteria: Encoded duration matches captured duration within a documented tolerance; continuous input does not reset at block boundaries. No WebM data is labeled PCM. Browser testing is recorded separately from unit tests.
+
+Suggested commit: `feat: encode bounded microphone pcm frames`
+
+## Task 4 — Add the streaming transcription adapter
+
+```text
+Read AGENTS.md and perform Task 4 only. Check the installed OpenAI SDK and current official realtime transcription/session docs. Do not guess SDK methods, model names, VAD support, or event fields. Choose a configurable transcription-only model supported by the account and record the contract in docs/STT_PROVIDER.md. Use server-side credentials.
+
+Implement a small StreamingTranscriber adapter with connect, send_audio, finish_turn/flush, events, and close responsibilities, plus a deterministic fake. Normalize provider partial/final events into internal transcript segments. Preserve provider turn/item identifiers and ordering links needed to handle out-of-order completions. Map provider errors to sanitized application errors.
+
+Implement endpointing compatible with the chosen model. If provider VAD is unsupported, use a simple documented local endpoint detector or an explicit turn-commit control during development; do not assume unsupported VAD works. Test silence, continuous speech, turn boundaries, and final flush behavior.
+
+Mock the provider to test deltas, duplicate/out-of-order finals, provider failure, timeout, and cleanup. Do not run a paid smoke test. Document the opt-in smoke-test command and what remains unverified without credentials. Stop here.
+```
+
+Pass criteria: A fake provider generates accurate partial/final normalized events in audio-turn order. The chosen provider protocol is documented, with endpointing and commit rules. If the model is inaccessible, Codex finishes fake tests and reports the real integration blocker rather than silently substituting an incompatible model.
+
+Optional manual smoke test, explicitly requested by you: Use 15–30 seconds of synthetic/consented speech with a server-side key. Verify the selected provider model produces incremental text and a final completion. Never paste your key into a prompt.
+
+Suggested commit: `feat: add isolated streaming transcription adapter`
+
+## Task 5 — Connect live transcription and implement stop/drain
+
+```text
+Read AGENTS.md and perform Task 5 only.
+
+Connect PCM receive to the STT adapter and render transcript.partial/transcript.final in React. Partials replace the displayed draft; finals replace the draft and enter final context once. Keep segment order correct when provider completions arrive out of order. Show unknown speaker roles unless evidence exists.
+
+Separate audio IO, transcript handling, and semantic-work queues. Add the stop sequence from AGENTS.md: send/flush last browser frame, stop accepting audio, drain queued frames, flush the provider's final nonempty turn, wait bounded time for pending finals, preserve incomplete status, close resources, and emit call.ended. Disconnect performs bounded cleanup and marks interrupted. Do not implement seamless live resume.
+
+Test duplicate stop, final text arriving during stopping, empty/silent call, no provider completion, fake slow consumers, queue saturation, network loss, and isolation of two simultaneous calls. Verify StrictMode/unmount cleanup. Keep V1 unchanged. Update docs/progress and run relevant backend/frontend checks. Stop here.
+```
+
+Manual check: Speak a sentence, pause, speak another, stop immediately after the final word. Check that the last utterance is retained and the microphone is released. A timed-out finalization must show incomplete transcript status.
+
+Pass criteria: Slow downstream work cannot stall transcription, no finalized segments are silently lost, and final ordering is stable.
+
+Suggested commit: `feat: render live transcript with reliable call finalization`
+
+## Task 6 — Add an offline transcript replay harness
+
+```text
+Read AGENTS.md and perform Task 6 only.
+
+Add synthetic transcript fixtures with stable segment IDs/order, optional timing, explicit unknown speaker roles, and expected sales signals. Include a demo with pricing, competitor, ordinary question, requirement, and buying-intent utterances; also include silence/no-signal and repeated-objection cases.
+
+Implement a developer replay command that feeds these fixtures through the same final-segment pipeline without microphone or STT API usage. Keep replay out of the production audio path. Let tests inject a fake clock; avoid real waiting in unit tests.
+
+Use replay to demonstrate partial/final replacement, repeated finals, and out-of-order completion handling. Document the command and distinguish transcript replay from STT evaluation. Do not pretend replay proves audio transcription accuracy. Update progress and stop here.
+```
+
+Pass criteria: You can reproduce the transcript/UI behavior without paid APIs or microphone access. Fixtures are fictional and committed; private customer recordings are excluded.
+
+Suggested commit: `test: add deterministic transcript replay fixtures`
+
+## Task 7 — Detect live sales events from final context
+
+```text
+Read AGENTS.md and perform Task 7 only.
+
+Add validated SalesEvent schemas for question, objection, competitor, pricing, buying_signal, and requirement. Each event cites source segment IDs and a short exact evidence span; validate both against the input. Treat confidence as an uncalibrated model estimate if included.
+
+Implement a small structured-output classifier behind an injected client. Trigger from bounded final-transcript windows using count/character thresholds plus a trailing timer. Process a lone utterance even when conversation stops; coalesce pending windows while one request runs. Never classify partial words. Preserve a processed watermark, deduplicate overlapping-window events, and allow a genuinely new repeated objection.
+
+Emit sales.event and show a simple signal list. Classify role-unknown text honestly; do not invent who said it. No RAG/coaching yet.
+
+Test evidence validation, ordinary question vs objection, multiple event types, no-signal text, duplicates, quiet trailing windows, stale results, schema/API failure, and continuing transcript delivery during a slow classifier. Use fake AI calls. Update docs/progress and stop here.
+```
+
+Pass criteria: The replay fixture produces expected events with valid evidence references, while no-signal and repeated windows avoid spurious duplicate signals. Report fixture results, not unmeasured accuracy.
+
+Suggested commit: `feat: detect evidence backed live sales signals`
+
+## Task 8 — Introduce PostgreSQL + pgvector and ingest knowledge
+
+```text
+Read AGENTS.md and perform Task 8 only.
+
+Add local Docker Compose for PostgreSQL with pgvector and migrations using SQLAlchemy/Alembic, following existing conventions. This stage introduces only knowledge storage; do not add Redis or accounts yet. Pin tested image/dependency versions. Document Windows/WSL-compatible setup without assuming host package installation.
+
+Create synthetic Markdown product, pricing, competitor, objection-handling, and sales-playbook documents for a fictional company. State that all facts/prices are fictional. Implement deterministic heading-aware chunks with stable IDs, source path/heading, content hashes, document/corpus revisions, embedding model, and vector dimensions.
+
+Add a CLI ingestion command with a fake embedding mode for tests and explicit opt-in real embedding usage. Make unchanged ingestion reusable, changed/deleted content non-stale, and corpus publication atomic so failed ingestion leaves the previous revision searchable. Never mix embedding models/dimensions.
+
+Test chunk determinism, repeated ingestion, changes/deletions, failed embedding batch, and dimension mismatch; run marked DB integration tests if services are available. Update docs/progress and stop here.
+```
+
+Pass criteria: Migrations work on an empty disposable database; fake ingestion is reproducible and idempotent; failing a refresh does not publish a partial corpus. Credentials and database volumes are not committed.
+
+Suggested commit: `feat: ingest versioned sales knowledge into pgvector`
+
+## Task 9 — Implement and evaluate retrieval
+
+```text
+Read AGENTS.md and perform Task 9 only.
+
+Implement parameterized exact cosine search over the active corpus revision. Use the corpus embedding model/dimensions for query embeddings. Return bounded top-k results with distance, chunk ID, source heading/path, text, and content revision. Do not add ANN indexes, a second vector database, or a web crawler.
+
+Add labeled retrieval fixtures: pricing question, competitor comparison, implementation requirement, and unrelated/no-answer query. Use deterministic test vectors for integration tests; separate those results from real embedding quality. Define a configurable evidence threshold and explain that it requires empirical tuning.
+
+Test expected source ordering, empty corpus, below-threshold results, invalid dimensions, inactive/stale revisions, database failure, and SQL parameterization. Document a developer query command and opt-in real retrieval evaluation. Do not implement coaching yet. Update progress and stop here.
+```
+
+Pass criteria: Retrieval returns inspectable sources or a clear no-evidence result. Test vectors do not masquerade as measured semantic-search quality.
+
+Suggested commit: `feat: retrieve relevant sales playbook evidence`
+
+## Task 10 — Add source-grounded live coaching
+
+```text
+Read AGENTS.md and perform Task 10 only.
+
+Connect eligible sales events to retrieval and then a structured-output CoachService. Pass bounded recent context, evidence segments, and retrieved chunks. Return a concise suggested response/clarifying question, source chunk IDs, evidence segment IDs, and insufficient_evidence status. Treat transcript and knowledge text as data, not instructions.
+
+Validate cited chunks were retrieved and evidence IDs exist. Require source support for factual product/pricing/competitor claims. If retrieval is weak, offer a clarifying question or acknowledge missing facts; never invent discounts or advantages. Store source versions in the suggestion payload and render clickable/expandable source details in React.
+
+Add per-call cooldown, bounded concurrency, trigger deduplication, and context freshness checks. Suppress stale results and all new live suggestions after stopping. Coaching failures produce a warning while transcript delivery continues. No spoken audio or external actions.
+
+Test valid/invalid citations, no-evidence handling, injected instructions, duplicate triggers, stale results, stop cancellation, and slow-model behavior using fakes. Update docs/progress and stop here.
+```
+
+Manual check: Replay a pricing objection with a matching playbook, inspect the suggestion's sources, then replay an unsupported feature question. The second must not invent an answer.
+
+Pass criteria: Live transcript remains responsive; suggestions are short and evidence-linked. The UI does not imply that model confidence or a citation alone guarantees correctness.
+
+Suggested commit: `feat: provide grounded text coaching during live calls`
+
+## Task 11 — Persist active calls and add history APIs
+
+```text
+Read AGENTS.md and perform Task 11 only.
+
+Add migrations and repository methods for calls, final transcript_segments, sales_events, suggestions, and analysis status. Persist accepted finals/events/suggestions during a call rather than waiting for stop. Retain source metadata/version snapshots for historical citations. Raw audio retention stays off.
+
+Add bounded paginated list/detail endpoints and a basic history view. Use foreign keys, unique constraints, per-call ordering, parameterized queries, transactions, and idempotent writes. Call ended/interrupted and analysis pending/completed are separate statuses. On service shutdown mark recoverable calls interrupted; on restart reconcile abandoned live state.
+
+Handle write failures explicitly: do not display Saved when persistence failed. Limit local access and validate WebSocket Origin; do not describe UUIDs as authorization or deploy public history endpoints.
+
+Test duplicate final writes, event/suggestion identity, call isolation, interrupted-call retention, pagination, failed writes, restart reconciliation, and historical citations after corpus changes. Use a disposable DB. Update docs/progress and stop here.
+```
+
+Pass criteria: A stopped/interrupted call remains readable after backend restart with correct ordered finals. PostgreSQL, not Redis or UI state, owns saved history.
+
+Suggested commit: `feat: persist live call records and history`
+
+## Task 12 — Reuse V1 analysis and scoring after live calls
+
+```text
+Read AGENTS.md, docs/V1_BASELINE.md, and Task 12. Perform only this task.
+
+Freeze the ordered final transcript after bounded stop/drain and invoke the existing V1 transcript-analysis service and scoring function through a thin adapter. Do not retranscribe live audio or create a second analysis schema/scoring implementation. Preserve V1 score weights, categories, upload endpoint, and response compatibility.
+
+Persist analysis pending/running/completed/failed status and result version. Use an atomic job claim and one logical result per call+version, a supervised single-process task, bounded retries, and an explicit failed-analysis retry endpoint. Recover abandoned running claims after a documented timeout. Do not claim exactly-once API execution; retries may repeat a billable request.
+
+Publish analysis.started/completed/failed when a socket remains available; history polling must work after disconnect. Label incomplete transcripts and skip analysis/scoring for empty or insufficient text according to existing validation. Explain deterministic Python scoring vs subjective LLM ratings.
+
+Test simultaneous stop/retry, duplicate scheduling, failed analysis recovery, empty/incomplete calls, V1 schema/score compatibility, and the original upload flow. Use fake providers. Update docs/progress and stop here.
+```
+
+Pass criteria: Upload and live-final transcripts converge on the same analysis/scoring implementation. Saved failures are retryable without duplicating logical results or erasing the call.
+
+Suggested commit: `feat: reuse v1 analysis for finalized live transcripts`
+
+## Task 13 — Add Redis for bounded temporary context
+
+```text
+Read AGENTS.md and perform Task 13 only.
+
+Introduce a small SessionStore interface by extracting the working in-memory session context, then implement a Redis store with equivalent tested behavior. Add Redis to Compose. Store only active metadata, bounded recent context, event/suggestion deduplication keys, and TTLs. Sockets, STT connections, async tasks, and durable full transcripts stay elsewhere.
+
+Use call-scoped keys, active TTL refresh, cleanup policy, and atomic conditional deduplication operations. Avoid unsafe concurrent read-modify-write and unbounded histories. Define expiry shorter for completed context and a bounded in-memory fallback for Redis outages in the single-worker demo. Emit degraded-mode status without interrupting transcription unnecessarily.
+
+Test store equivalence, TTL/refresh, call isolation, duplicate detection races, Redis outage/recovery, cleanup, and unchanged PostgreSQL history. Document that Redis does not enable multiple workers or seamless active-call resume. Do not add streams, pub/sub fan-out, or Kafka. Update docs/progress and stop here.
+```
+
+Pass criteria: Redis has an observable purpose and failure policy; stopping Redis does not erase saved calls. The deployment still uses one backend worker.
+
+Suggested commit: `feat: keep ephemeral call context in redis`
+
+## Task 14 — Finish the dashboard without expanding scope
+
+```text
+Read AGENTS.md and perform Task 14 only.
+
+Refine the existing React UI into live transcript, latest grounded suggestion/source details, sales-signal timeline, call status/duration, and a completed-call view using the existing V1 analysis components. Retain the upload workflow. Add history navigation, analysis pending/failed/retry states, and visible incomplete/degraded-state messages.
+
+Show partial text differently from finals. Avoid forcing scroll when the user reads earlier text. Keep unknown speakers labeled honestly. Show only measured metrics: event counts and known stage timings; no fabricated agent/customer talk ratio or emotion meter. Explain score components using the existing rubric.
+
+Use existing styling and routing conventions. Add accessible labels, keyboard operation, useful empty states, responsive layout, and safeguards against stale events from the previous call. Do not add auth, billing, CRM, or a redesign of unrelated V1 pages.
+
+Test event reducers, controls by state, call-switch isolation, delayed/stale events, source details, history/retry, and resource cleanup. Run typecheck/build and relevant V1 checks. Update progress and stop here.
+```
+
+Pass criteria: You can show the complete demo from Start through saved analysis; microphone errors, interrupted calls, and unavailable metrics have clear UI states.
+
+Suggested commit: `feat: complete live coaching and call history dashboard`
+
+## Task 15 — Evaluate English, Hindi, and Hinglish honestly
+
+```text
+Read AGENTS.md and perform Task 15 only.
+
+Add labeled synthetic English, Hindi (Devanagari), and Hinglish fixtures covering questions, objections, competitors, requirements, negation, and no-signal conversations. Preserve original transcript text and Unicode. Adapt detector/coach instructions to understand code-switching and choose a documented suggestion language without altering factual grounding.
+
+Separate transcript reasoning evaluation from actual audio STT evaluation. Add optional consented/synthetic audio smoke-test instructions and document model language configuration, uncertain language labels, and known failures. Never force Hindi-only configuration for a mixed-language call without testing the provider behavior.
+
+Maintain unknown speaker roles for mixed microphone input. If automatic diarization is supported by the chosen streaming provider, first document capability and limitations; only implement it as a separately requested subtask. Speaker IDs require explicit salesperson/customer role mapping, and talk ratio requires actual reliable timing. Do not guess roles from wording or assign alternating utterances.
+
+Test Unicode roundtrip and multilingual evidence spans, evaluate fixtures using fake/classifier outputs where appropriate, and provide an opt-in real evaluation command. Report actual measured results separately; do not invent multilingual accuracy. Update docs/progress and stop here.
+```
+
+Pass criteria: The app handles multilingual text without corrupting evidence or citations. Language/STT accuracy remains a documented measured capability, not a blanket claim.
+
+Suggested commit: `feat: support and evaluate multilingual call context`
+
+## Task 16 — Instrument latency and test controlled load
+
+```text
+Read AGENTS.md and perform Task 16 only.
+
+Add correlated monotonic timing for STT final receipt, detection, embedding/retrieval, coaching, and suggestion delivery. Define the main application metric precisely as final transcript received → suggestion delivered. Measure speech-end latency only if a valid audio/VAD boundary and compatible clock mapping exist; otherwise label it unavailable.
+
+Track stage durations, p50/p95 over repeated samples, errors, active calls, queue depth, coalesced windows, and stale suggestions. Do not log audio/transcript contents or secrets. Create a replay benchmark with fake providers and an opt-in real benchmark; explicitly distinguish their results.
+
+Use bounded synthetic load to test slow classification, slow DB/Redis, queue saturation, provider timeouts, repeated start/stop, and two concurrent calls in one worker. Confirm finalized transcripts are retained or failure is explicit. Set budgets as engineering targets, not claimed benchmark results. Optimize only demonstrated bottlenecks within the existing architecture.
+
+Run relevant checks, record actual measured environment/sample count/results in docs/LATENCY.md, update progress, and stop here.
+```
+
+Pass criteria: Latency numbers have named start/end events, sample counts, and environment. No made-up subsecond guarantee. Overload does not silently lose final transcripts.
+
+Suggested commit: `perf: instrument and validate live pipeline latency`
+
+## Task 17 — Package, review, and prepare the interview demo
+
+```text
+Read AGENTS.md and perform Task 17 only.
+
+Complete local Docker Compose for frontend, one backend worker, PostgreSQL+pgvector, and Redis. Add health checks, dependency readiness, persistent DB volume, non-secret environment examples, and explicit migration/ingestion commands. Never call docker compose down -v automatically. Explain localhost/HTTPS microphone restrictions and WebSocket proxy configuration.
+
+Add CI for backend unit tests, frontend tests/typecheck/build, and disposable PostgreSQL/Redis integration checks. All default tests use fake AI providers and synthetic data. Preserve existing CI rather than duplicate it. Real API tests remain explicitly opt-in.
+
+Review source and docs for secret leakage, PCM errors, provider schema drift, V1 regression, final-turn loss, blocking IO, orphan tasks, unbounded queues, invented speakers, stale suggestions, unsupported citations, duplicate jobs, persistence failures, and unnecessary complexity. Fix high/medium findings within scope; document remaining limitations with evidence.
+
+Run the full relevant suite once after fixes. Write README setup/run/demo/troubleshooting commands using actual repository paths, docs/DEMO_SCRIPT.md, and docs/INTERVIEW_NOTES.md. Include architecture, V1→V2 evolution, failure behavior, retrieval grounding, measured latency, privacy/local-use boundary, and deferred work. Mark BUILD_PROGRESS.md truthfully; do not mark unrun paid checks passed. Stop here.
+```
+
+Pass criteria: A fresh clone can install dependencies, migrate/ingest demo knowledge, and run fake replay with documented commands. Real mode is configured separately. The full V1 upload workflow survives the V2 release.
+
+Suggested commit: `chore: package verify and document pitchpilot v2`
+
+After you verify the intended release commit:
+
+```bash
+git tag v2.0-realtime-copilot
+```
+
+Do not overwrite an existing release tag. Publishing or public hosting is a separate task because this baseline has no user access control.
+
+---
+
+## Verification commands: resolve them in Task 0
+
+Codex must replace these examples with the actual commands and paths in docs/V1_BASELINE.md/README. Run only configured scripts; missing scripts are not passing checks.
+
+| Check | Typical command | Notes |
+| --- | --- | --- |
+| Backend unit tests | `python -m pytest` | Run from actual backend/environment; default fakes only |
+| Frontend tests | `npm run test -- --run` | Use the existing package manager and test script |
+| Typecheck | `npm run typecheck` | Add a script if needed; do not silently skip TS validation |
+| Frontend production build | `npm run build` | Verify worklet assets resolve |
+| Infrastructure | `docker compose up -d postgres redis` | Use actual service names; Redis exists from Task 13 |
+| Migrations | `python -m alembic upgrade head` | Correct working directory/config required |
+| DB/Redis integration | `python -m pytest -m integration` | Disposable test services, never the user's real DB |
+| Frontend dev | `npm run dev` | Preserve existing dev conventions |
+| Backend dev | Repository's documented Uvicorn command | Do not invent a module path |
+| Replay / ingestion / benchmark | Scripts added by their tasks | README must contain concrete commands |
+
+Do not run destructive cleanup against development volumes just to reset integration tests. Create isolated test services/databases.
+
+## Small demo script you should be able to perform
+
+1. Show V1 upload and its existing structured analysis/score.
+2. Start a live call and speak a fictional product question followed by a price objection.
+3. Show partial text becoming final, detected evidence-backed events, and a grounded suggestion with sources.
+4. Ask about an unsupported feature; show a clarifying question or insufficient evidence.
+5. Stop immediately after a final utterance; verify it survives finalization and microphone capture ends.
+6. Open saved history and show V1 analysis/scoring applied to the live transcript.
+7. Use replay for a Hindi/Hinglish example and state that replay tests reasoning, not STT accuracy.
+8. Show observed latency metrics and explain what their start/end boundaries measure.
+
+Use fictional data. When demonstrating real microphone/STT mode, explicitly choose to incur its API usage.
+
+## Ask Codex to explain each completed stage
+
+```text
+Explain the task we just completed so I can defend it in an interview.
+Keep it concise. For each important changed module, describe:
+- its responsibility and input/output;
+- its place in the data flow;
+- the failure it handles;
+- one reasonable alternative and why we chose this approach.
+Identify any limitation or check that was not actually verified.
+Then ask me one technical question at a time; wait for my answer.
+```
+
+## Recovery prompt when something breaks
+
+```text
+Read AGENTS.md and docs/BUILD_PROGRESS.md. Diagnose this failure in the existing implementation.
+Reproduce with a focused fake-provider test where possible, identify the earliest failed boundary, and fix only the cause. Preserve V1 contracts and unrelated edits. Do not remove assertions, hide errors, replace the stack, or add infrastructure to bypass the bug. Run the relevant checks and report actual results. Update progress with the fix and any remaining limitation.
+```
+
+## Completion checklist
+
+- [ ] V1 upload API, schema, scoring, UI, and tests remain compatible.
+- [ ] Binary audio encoding matches the verified provider contract.
+- [ ] Capture/resources are released after normal stop and failures.
+- [ ] Partial/final replacement and out-of-order final handling are correct.
+- [ ] Stop drains the last utterance within a timeout or marks incomplete.
+- [ ] Slow semantic work does not block audio/transcript delivery.
+- [ ] Event evidence is validated and duplicates are controlled.
+- [ ] Knowledge updates are reproducible and do not expose stale/partial corpora.
+- [ ] Retrieval returns inspectable sources and handles no-match queries.
+- [ ] Coaching validates citations and abstains from unsupported product claims.
+- [ ] Durable records survive interruption/restart; errors do not falsely claim Saved.
+- [ ] Post-call analysis reuses V1 and has recorded retryable failures.
+- [ ] Redis state is bounded, isolated, and temporary.
+- [ ] Unknown speakers and unavailable talk ratio are displayed honestly.
+- [ ] English/Hindi/Hinglish evaluation distinguishes reasoning from STT quality.
+- [ ] Measured latency is labeled with boundaries, samples, and environment.
+- [ ] Default tests/CI run without API keys or real customer recordings.
+- [ ] Fresh-clone setup and fake demo are documented and verified.
+- [ ] Private/local demo limitations and deferred public access control are clear.
+
+## Reference notes
+
+The provider and library APIs change. Consult these primary sources during the relevant task:
+
+- Repository instructions: https://developers.openai.com/codex/guides/agents-md
+- OpenAI streaming transcription: https://developers.openai.com/api/docs/guides/realtime-transcription
+- OpenAI structured outputs: https://developers.openai.com/api/docs/guides/structured-outputs
+- OpenAI Python SDK: https://github.com/openai/openai-python
+- PostgreSQL vector search: https://github.com/pgvector/pgvector
+- Browser AudioWorklet: https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet
+
+At preparation time, official transcription documentation described transcription-only sessions, PCM audio, incremental/completed transcript events, and model-specific endpointing behavior. The plan deliberately requires checking those fields again instead of treating old example payloads as a permanent API contract. Exact pgvector search is sufficient for the small initial corpus; approximate indexing is a measured future choice.
