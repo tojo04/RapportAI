@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import {
+  createPcmCapture,
+  PCM_AUDIO_CONFIG,
+  type PcmCapture,
+} from '../audio/pcmCapture';
 import { createLiveCall, getLiveWebSocketUrl } from '../services/realtimeApi';
 import {
   parseServerEvent,
@@ -10,23 +15,11 @@ import {
   type StopCommand,
 } from '../types/realtime';
 
-const MEDIA_RECORDER_TIMESLICE_MS = 250;
 const MAX_SOCKET_BUFFERED_BYTES = 1_048_576;
 const CONNECTION_TIMEOUT_MS = 10_000;
 const STOP_TIMEOUT_MS = 5_000;
-const RECORDER_STOP_TIMEOUT_MS = 2_000;
 const OPEN_SOCKET_STATE = 1;
 const CONNECTING_SOCKET_STATE = 0;
-
-export interface MediaRecorderLike {
-  readonly mimeType: string;
-  readonly state: string;
-  ondataavailable: ((event: BlobEvent) => void) | null;
-  onerror: ((event: ErrorEvent) => void) | null;
-  onstop: ((event: Event) => void) | null;
-  start(timeslice?: number): void;
-  stop(): void;
-}
 
 export interface WebSocketLike {
   binaryType: BinaryType;
@@ -42,7 +35,10 @@ export interface WebSocketLike {
 
 export interface LiveCallDependencies {
   requestMicrophone: () => Promise<MediaStream>;
-  createRecorder: (stream: MediaStream) => MediaRecorderLike;
+  createCapture: (
+    stream: MediaStream,
+    onFrame: (frame: ArrayBuffer) => void,
+  ) => Promise<PcmCapture>;
   createSocket: (url: string) => WebSocketLike;
   createSession: () => Promise<CreateCallResponse>;
   websocketUrl: (path: string) => string;
@@ -59,28 +55,6 @@ export interface LiveCallViewModel {
   stop: () => Promise<void>;
 }
 
-function chooseRecorderMimeType(): string | undefined {
-  const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/ogg;codecs=opus',
-    'audio/mp4',
-  ];
-  return candidates.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
-}
-
-function defaultCreateRecorder(stream: MediaStream): MediaRecorderLike {
-  const mimeType = chooseRecorderMimeType();
-  const recorder = mimeType
-    ? new MediaRecorder(stream, { mimeType })
-    : new MediaRecorder(stream);
-  if (!recorder.mimeType.toLowerCase().startsWith('audio/')) {
-    throw new Error(
-      'This browser did not provide a labelled audio recording format.',
-    );
-  }
-  return recorder;
-}
-
 function defaultCommandId(): string {
   return typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
@@ -94,7 +68,7 @@ function defaultDependencies(): LiveCallDependencies {
         audio: true,
         video: false,
       }),
-    createRecorder: defaultCreateRecorder,
+    createCapture: createPcmCapture,
     createSocket: (url) => new WebSocket(url),
     createSession: createLiveCall,
     websocketUrl: getLiveWebSocketUrl,
@@ -129,7 +103,7 @@ export function useLiveCall(
   const startingRef = useRef(false);
   const intentionalCloseRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
-  const recorderRef = useRef<MediaRecorderLike | null>(null);
+  const captureRef = useRef<PcmCapture | null>(null);
   const socketRef = useRef<WebSocketLike | null>(null);
   const sessionRef = useRef<CreateCallResponse | null>(null);
   const sendChainRef = useRef<Promise<void>>(Promise.resolve());
@@ -171,20 +145,8 @@ export function useLiveCall(
 
   const cleanup = useCallback(() => {
     clearTimers();
-    const recorder = recorderRef.current;
-    recorderRef.current = null;
-    if (recorder !== null) {
-      recorder.ondataavailable = null;
-      recorder.onerror = null;
-      recorder.onstop = null;
-      if (recorder.state !== 'inactive') {
-        try {
-          recorder.stop();
-        } catch {
-          // The recorder may already be stopping; tracks are still released.
-        }
-      }
-    }
+    captureRef.current?.close();
+    captureRef.current = null;
     releaseTracks();
 
     const socket = socketRef.current;
@@ -218,10 +180,10 @@ export function useLiveCall(
   );
   failRef.current = fail;
 
-  const queueBlob = useCallback((blob: Blob) => {
-    if (blob.size === 0) return;
+  const queueFrame = useCallback((frame: ArrayBuffer) => {
+    if (frame.byteLength === 0) return;
     sendChainRef.current = sendChainRef.current
-      .then(async () => {
+      .then(() => {
         const socket = socketRef.current;
         const session = sessionRef.current;
         if (
@@ -231,19 +193,18 @@ export function useLiveCall(
         ) {
           throw new Error('The live audio connection closed unexpectedly.');
         }
-        if (blob.size > session.limits.max_frame_bytes) {
+        if (frame.byteLength > session.limits.max_frame_bytes) {
           throw new Error('A microphone frame exceeded the server size limit.');
+        }
+        if (frame.byteLength % 2 !== 0) {
+          throw new Error('A microphone frame was not aligned as 16-bit PCM.');
         }
         if (socket.bufferedAmount > MAX_SOCKET_BUFFERED_BYTES) {
           throw new Error(
             'The live audio connection is congested. The call was stopped.',
           );
         }
-        const buffer = await blob.arrayBuffer();
-        if (socket.readyState !== OPEN_SOCKET_STATE) {
-          throw new Error('The live audio connection closed unexpectedly.');
-        }
-        socket.send(buffer);
+        socket.send(frame);
       })
       .catch((sendError: unknown) => {
         failRef.current(
@@ -274,18 +235,7 @@ export function useLiveCall(
     const operation = (async () => {
       updateStatus('stopping');
       clearTimers();
-      const recorder = recorderRef.current;
-      if (recorder !== null && recorder.state !== 'inactive') {
-        await Promise.race([
-          new Promise<void>((resolve) => {
-            recorder.onstop = () => resolve();
-            recorder.stop();
-          }),
-          new Promise<void>((resolve) => {
-            setTimeout(resolve, RECORDER_STOP_TIMEOUT_MS);
-          }),
-        ]);
-      }
+      await captureRef.current?.stop();
       await sendChainRef.current;
       releaseTracks();
 
@@ -340,15 +290,8 @@ export function useLiveCall(
         return;
       }
 
-      const recorder = dependencies.createRecorder(stream);
-      if (!recorder.mimeType.toLowerCase().startsWith('audio/')) {
-        throw new Error('The browser returned an unknown microphone encoding.');
-      }
-      recorderRef.current = recorder;
-      recorder.ondataavailable = ({ data }) => queueBlob(data);
-      recorder.onerror = () => {
-        failRef.current('The browser microphone recorder failed.');
-      };
+      const capture = await dependencies.createCapture(stream, queueFrame);
+      captureRef.current = capture;
 
       const session = await dependencies.createSession();
       sessionRef.current = session;
@@ -386,11 +329,7 @@ export function useLiveCall(
                 command_id: dependencies.commandId(),
                 type: 'start',
                 payload: {
-                  audio: {
-                    transport: 'media_recorder',
-                    mime_type: recorder.mimeType,
-                    timeslice_ms: MEDIA_RECORDER_TIMESLICE_MS,
-                  },
+                  audio: PCM_AUDIO_CONFIG,
                 },
               };
               socket.send(JSON.stringify(command));
@@ -401,9 +340,11 @@ export function useLiveCall(
                 clearTimeout(connectionTimerRef.current);
                 connectionTimerRef.current = null;
               }
-              if (recorder.state === 'inactive') {
-                recorder.start(MEDIA_RECORDER_TIMESLICE_MS);
-              }
+              void capture.start().catch((captureError: unknown) => {
+                failRef.current(
+                  userMessage(captureError, 'The browser microphone failed.'),
+                );
+              });
               startingRef.current = false;
               updateStatus('live');
               beginElapsedTimer(session.limits.max_call_seconds);
@@ -449,7 +390,7 @@ export function useLiveCall(
       updateStatus('failed');
       cleanup();
     }
-  }, [beginElapsedTimer, cleanup, dependencies, queueBlob, updateStatus]);
+  }, [beginElapsedTimer, cleanup, dependencies, queueFrame, updateStatus]);
 
   useEffect(() => {
     mountedRef.current = true;

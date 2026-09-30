@@ -108,7 +108,7 @@ describe('realtime protocol validation', () => {
     ).toBe(false);
   });
 
-  it('validates accurately labelled MediaRecorder metadata', () => {
+  it('validates the fixed PCM metadata contract', () => {
     expect(
       isClientCommand({
         protocol_version: 1,
@@ -116,9 +116,10 @@ describe('realtime protocol validation', () => {
         type: 'start',
         payload: {
           audio: {
-            transport: 'media_recorder',
-            mime_type: 'audio/webm;codecs=opus',
-            timeslice_ms: 250,
+            transport: 'pcm_s16le',
+            sample_rate_hz: 24_000,
+            channels: 1,
+            frame_duration_ms: 100,
           },
         },
       }),
@@ -130,9 +131,10 @@ describe('realtime protocol validation', () => {
         type: 'start',
         payload: {
           audio: {
-            transport: 'media_recorder',
-            mime_type: 'audio/pcm',
-            timeslice_ms: 10,
+            transport: 'pcm_s16le',
+            sample_rate_hz: 48_000,
+            channels: 1,
+            frame_duration_ms: 100,
           },
         },
       }),

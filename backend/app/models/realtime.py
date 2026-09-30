@@ -9,7 +9,6 @@ from pydantic import (
     Field,
     StringConstraints,
     TypeAdapter,
-    field_validator,
 )
 
 
@@ -43,26 +42,15 @@ class ClientCommandBase(ProtocolModel):
     command_id: Identifier
 
 
-class MediaRecorderAudioConfig(ProtocolModel):
-    transport: Literal["media_recorder"]
-    mime_type: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
-    ]
-    timeslice_ms: Annotated[int, Field(strict=True, ge=50, le=1_000)]
-
-    @field_validator("mime_type")
-    @classmethod
-    def validate_audio_mime_type(cls, value: str) -> str:
-        if not value.lower().startswith("audio/") or any(
-            character in value for character in ("\r", "\n")
-        ):
-            raise ValueError("MediaRecorder MIME type must describe audio.")
-        return value
+class PcmAudioConfig(ProtocolModel):
+    transport: Literal["pcm_s16le"]
+    sample_rate_hz: Literal[24_000]
+    channels: Literal[1]
+    frame_duration_ms: Annotated[int, Field(strict=True, ge=50, le=200)]
 
 
 class StartPayload(ProtocolModel):
-    audio: MediaRecorderAudioConfig | None = None
+    audio: PcmAudioConfig | None = None
 
 
 class StartCommand(ClientCommandBase):

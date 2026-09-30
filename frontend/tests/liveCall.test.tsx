@@ -5,9 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   useLiveCall,
   type LiveCallDependencies,
-  type MediaRecorderLike,
   type WebSocketLike,
 } from '../src/hooks/useLiveCall';
+import type { PcmCapture } from '../src/audio/pcmCapture';
 import type { CreateCallResponse } from '../src/types/realtime';
 
 const SESSION: CreateCallResponse = {
@@ -38,32 +38,22 @@ function serverEvent(
   });
 }
 
-function audioBlob(size = 5): Blob {
-  return {
-    size,
-    arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(size)),
-  } as unknown as Blob;
-}
-
-class FakeRecorder implements MediaRecorderLike {
-  readonly mimeType = 'audio/webm;codecs=opus';
-  state = 'inactive';
-  ondataavailable: ((event: BlobEvent) => void) | null = null;
-  onerror: ((event: ErrorEvent) => void) | null = null;
-  onstop: ((event: Event) => void) | null = null;
-  readonly start = vi.fn((timeslice?: number) => {
-    void timeslice;
-    this.state = 'recording';
-  });
-  readonly stop = vi.fn(() => {
-    if (this.state === 'inactive') return;
-    this.state = 'inactive';
-    this.ondataavailable?.({ data: audioBlob(3) } as BlobEvent);
-    this.onstop?.(new Event('stop'));
+class FakeCapture implements PcmCapture {
+  readonly inputSampleRate = 48_000;
+  private onFrame: (frame: ArrayBuffer) => void = () => undefined;
+  readonly start = vi.fn(async () => undefined);
+  readonly close = vi.fn();
+  readonly stop = vi.fn(async () => {
+    this.onFrame(new ArrayBuffer(2));
   });
 
-  emit(blob = audioBlob()): void {
-    this.ondataavailable?.({ data: blob } as BlobEvent);
+  bind(onFrame: (frame: ArrayBuffer) => void): this {
+    this.onFrame = onFrame;
+    return this;
+  }
+
+  emit(size = 4): void {
+    this.onFrame(new ArrayBuffer(size));
   }
 }
 
@@ -107,19 +97,19 @@ function setup(overrides: Partial<LiveCallDependencies> = {}) {
   const stream = {
     getTracks: () => [track],
   } as unknown as MediaStream;
-  const recorder = new FakeRecorder();
+  const capture = new FakeCapture();
   const socket = new FakeSocket();
   let commandNumber = 0;
   const dependencies: LiveCallDependencies = {
     requestMicrophone: vi.fn().mockResolvedValue(stream),
-    createRecorder: vi.fn().mockReturnValue(recorder),
+    createCapture: vi.fn(async (_stream, onFrame) => capture.bind(onFrame)),
     createSocket: vi.fn().mockReturnValue(socket),
     createSession: vi.fn().mockResolvedValue(SESSION),
     websocketUrl: vi.fn().mockReturnValue('ws://api.test/ws/calls/call-1'),
     commandId: vi.fn(() => `command-${++commandNumber}`),
     ...overrides,
   };
-  return { dependencies, recorder, socket, track };
+  return { dependencies, capture, socket, track };
 }
 
 async function reachLiveState(
@@ -147,23 +137,23 @@ async function reachLiveState(
 }
 
 describe('useLiveCall', () => {
-  it('streams labelled blobs, renders acknowledgements, and flushes before stop', async () => {
-    const { dependencies, recorder, socket, track } = setup();
+  it('streams labelled PCM, renders acknowledgements, and flushes before stop', async () => {
+    const { dependencies, capture, socket, track } = setup();
     const hook = await reachLiveState(dependencies, socket);
 
     expect(hook.result.current.status).toBe('live');
-    expect(recorder.start).toHaveBeenCalledWith(250);
+    expect(capture.start).toHaveBeenCalledOnce();
     const startCommand = JSON.parse(socket.sent[0] as string) as {
-      payload: { audio: { mime_type: string; transport: string } };
+      payload: { audio: Record<string, unknown> };
     };
-    expect(startCommand.payload.audio).toEqual(
-      expect.objectContaining({
-        transport: 'media_recorder',
-        mime_type: 'audio/webm;codecs=opus',
-      }),
-    );
+    expect(startCommand.payload.audio).toEqual({
+      transport: 'pcm_s16le',
+      sample_rate_hz: 24_000,
+      channels: 1,
+      frame_duration_ms: 100,
+    });
 
-    act(() => recorder.emit(audioBlob(5)));
+    act(() => capture.emit(4));
     await waitFor(() => {
       expect(socket.sent.some((item) => item instanceof ArrayBuffer)).toBe(
         true,
@@ -231,11 +221,11 @@ describe('useLiveCall', () => {
   });
 
   it('terminates instead of buffering unbounded audio', async () => {
-    const { dependencies, recorder, socket, track } = setup();
+    const { dependencies, capture, socket, track } = setup();
     const hook = await reachLiveState(dependencies, socket);
     socket.bufferedAmount = 1_048_577;
 
-    act(() => recorder.emit(audioBlob()));
+    act(() => capture.emit());
 
     await waitFor(() => {
       expect(hook.result.current.status).toBe('interrupted');

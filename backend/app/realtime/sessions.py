@@ -34,8 +34,9 @@ class LiveCallSession:
     writer_task: asyncio.Task[None] | None = field(default=None, repr=False)
     started_at: float | None = None
     audio_transport: str | None = None
-    audio_mime_type: str | None = None
-    audio_timeslice_ms: int | None = None
+    audio_sample_rate_hz: int | None = None
+    audio_channels: int | None = None
+    audio_frame_duration_ms: int | None = None
     audio_frames_received: int = 0
     audio_bytes_received: int = 0
     audio_frames_acknowledged: int = 0
@@ -82,15 +83,17 @@ class LiveCallSession:
         self,
         *,
         transport: str | None,
-        mime_type: str | None,
-        timeslice_ms: int | None,
+        sample_rate_hz: int | None,
+        channels: int | None,
+        frame_duration_ms: int | None,
     ) -> None:
         """Record transport metadata while the caller holds the session lock."""
 
         self.started_at = monotonic()
         self.audio_transport = transport
-        self.audio_mime_type = mime_type
-        self.audio_timeslice_ms = timeslice_ms
+        self.audio_sample_rate_hz = sample_rate_hz
+        self.audio_channels = channels
+        self.audio_frame_duration_ms = frame_duration_ms
 
 
 class LiveCallStore:

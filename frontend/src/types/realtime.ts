@@ -36,15 +36,16 @@ interface ClientCommandEnvelope<TType extends string, TPayload> {
   payload: TPayload;
 }
 
-export interface MediaRecorderAudioConfig {
-  transport: 'media_recorder';
-  mime_type: string;
-  timeslice_ms: number;
+export interface PcmAudioConfig {
+  transport: 'pcm_s16le';
+  sample_rate_hz: 24000;
+  channels: 1;
+  frame_duration_ms: number;
 }
 
 export type StartCommand = ClientCommandEnvelope<
   'start',
-  { audio?: MediaRecorderAudioConfig | null }
+  { audio?: PcmAudioConfig | null }
 >;
 export type StopCommand = ClientCommandEnvelope<'stop', Record<string, never>>;
 export type PingCommand = ClientCommandEnvelope<
@@ -251,18 +252,20 @@ function hasOnlyEmptyPayload(value: unknown): boolean {
   return isRecord(value) && Object.keys(value).length === 0;
 }
 
-function isMediaRecorderAudioConfig(
-  value: unknown,
-): value is MediaRecorderAudioConfig {
+function isPcmAudioConfig(value: unknown): value is PcmAudioConfig {
   return (
     isRecord(value) &&
-    value.transport === 'media_recorder' &&
-    isNonEmptyString(value.mime_type) &&
-    value.mime_type.toLowerCase().startsWith('audio/') &&
-    !/[\r\n]/u.test(value.mime_type) &&
-    isPositiveInteger(value.timeslice_ms) &&
-    value.timeslice_ms >= 50 &&
-    value.timeslice_ms <= 1_000
+    value.transport === 'pcm_s16le' &&
+    value.sample_rate_hz === 24_000 &&
+    value.channels === 1 &&
+    isPositiveInteger(value.frame_duration_ms) &&
+    value.frame_duration_ms >= 50 &&
+    value.frame_duration_ms <= 200 &&
+    Object.keys(value).every((key) =>
+      ['transport', 'sample_rate_hz', 'channels', 'frame_duration_ms'].includes(
+        key,
+      ),
+    )
   );
 }
 
@@ -467,7 +470,7 @@ export function isClientCommand(value: unknown): value is ClientCommand {
       Object.keys(value.payload).every((key) => key === 'audio') &&
       (value.payload.audio === undefined ||
         value.payload.audio === null ||
-        isMediaRecorderAudioConfig(value.payload.audio))
+        isPcmAudioConfig(value.payload.audio))
     );
   }
   if (value.type === 'stop') {

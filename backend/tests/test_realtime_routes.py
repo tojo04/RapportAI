@@ -41,16 +41,17 @@ def command(command_id: str, command_type: str) -> dict[str, object]:
     }
 
 
-def media_start(command_id: str = "start-1") -> dict[str, object]:
+def pcm_start(command_id: str = "start-1") -> dict[str, object]:
     return {
         "protocol_version": 1,
         "command_id": command_id,
         "type": "start",
         "payload": {
             "audio": {
-                "transport": "media_recorder",
-                "mime_type": "audio/webm;codecs=opus",
-                "timeslice_ms": 250,
+                "transport": "pcm_s16le",
+                "sample_rate_hz": 24_000,
+                "channels": 1,
+                "frame_duration_ms": 100,
             }
         },
     }
@@ -221,17 +222,17 @@ def test_live_audio_is_counted_and_acknowledged_at_interval() -> None:
         headers={"origin": ALLOWED_ORIGIN},
     ) as websocket:
         websocket.receive_json()
-        websocket.send_json(media_start())
+        websocket.send_json(pcm_start())
         websocket.receive_json()
 
         for _ in range(4):
-            websocket.send_bytes(b"audio")
+            websocket.send_bytes(b"\x00\x00\x01\x00")
 
         ack = websocket.receive_json()
         assert ack["type"] == "audio.ack"
         assert ack["payload"] == {
             "frames_received": 4,
-            "bytes_received": 20,
+            "bytes_received": 16,
         }
 
 
@@ -242,9 +243,9 @@ def test_stop_flushes_pending_audio_ack_before_end_events() -> None:
         headers={"origin": ALLOWED_ORIGIN},
     ) as websocket:
         websocket.receive_json()
-        websocket.send_json(media_start())
+        websocket.send_json(pcm_start())
         websocket.receive_json()
-        websocket.send_bytes(b"final-frame")
+        websocket.send_bytes(b"\x00\x00\x01\x00")
         websocket.send_json(command("stop-1", "stop"))
 
         ack = websocket.receive_json()
@@ -252,7 +253,7 @@ def test_stop_flushes_pending_audio_ack_before_end_events() -> None:
         ended = websocket.receive_json()
         assert ack["type"] == "audio.ack"
         assert ack["payload"]["frames_received"] == 1
-        assert ack["payload"]["bytes_received"] == 11
+        assert ack["payload"]["bytes_received"] == 4
         assert stopping["type"] == "call.stopping"
         assert ended["type"] == "call.ended"
 
@@ -276,11 +277,23 @@ def test_audio_requires_metadata_and_enforces_frame_limit() -> None:
         headers={"origin": ALLOWED_ORIGIN},
     ) as websocket:
         websocket.receive_json()
-        websocket.send_json(media_start())
+        websocket.send_json(pcm_start())
         websocket.receive_json()
         websocket.send_bytes(b"x" * 262_145)
         oversized = websocket.receive_json()
         assert oversized["payload"]["code"] == "audio_frame_too_large"
+
+    created = create_call()
+    with client.websocket_connect(
+        str(created["websocket_path"]),
+        headers={"origin": ALLOWED_ORIGIN},
+    ) as websocket:
+        websocket.receive_json()
+        websocket.send_json(pcm_start())
+        websocket.receive_json()
+        websocket.send_bytes(b"odd")
+        misaligned = websocket.receive_json()
+        assert misaligned["payload"]["code"] == "audio_frame_misaligned"
 
 
 def test_server_ends_call_at_duration_limit() -> None:
@@ -295,7 +308,7 @@ def test_server_ends_call_at_duration_limit() -> None:
             headers={"origin": ALLOWED_ORIGIN},
         ) as websocket:
             websocket.receive_json()
-            websocket.send_json(media_start())
+            websocket.send_json(pcm_start())
             websocket.receive_json()
 
             duration_error = websocket.receive_json()

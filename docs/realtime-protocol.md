@@ -2,7 +2,7 @@
 
 This document is the wire contract between the RapportAI browser and FastAPI
 live-call endpoint. Protocol version 1 covers call creation, JSON control, and
-the temporary Task 2 MediaRecorder transport proof.
+bounded PCM audio transport.
 
 ## Transport and session creation
 
@@ -78,20 +78,22 @@ and idempotent within one process-local session.
   "type": "start",
   "payload": {
     "audio": {
-      "transport": "media_recorder",
-      "mime_type": "audio/webm;codecs=opus",
-      "timeslice_ms": 250
+      "transport": "pcm_s16le",
+      "sample_rate_hz": 24000,
+      "channels": 1,
+      "frame_duration_ms": 100
     }
   }
 }
 ```
 
 Allowed only while `connecting`. `payload.audio` is optional for control-only
-tests, but binary frames require it. The MIME value is the browser
-MediaRecorder's actual `mimeType`; WebM/Opus, Ogg/Opus, or MP4 data is never
-labelled PCM. A repeated `start` with the same command ID while the session is
-`live` returns `call.started` with `duplicate: true`. A new start while already
-live returns an `illegal_state` error.
+tests, but binary frames require this exact signed 16-bit little-endian, 24 kHz,
+mono contract. `frame_duration_ms` accepts 50-200 ms; the browser emits 100 ms
+(4,800-byte) frames and may emit one shorter, sample-aligned final frame. A
+repeated `start` with the same command ID while the session is `live` returns
+`call.started` with `duplicate: true`. A new start while already live returns
+an `illegal_state` error.
 
 ### Stop
 
@@ -215,19 +217,21 @@ socket open. Before WebSocket acceptance, these close codes are used:
 | 4404 | Call ID does not exist in this worker                    |
 | 4409 | Session is connected, terminal, or otherwise unavailable |
 
-After `call.started`, binary frames are counted without decoding. The server
+After `call.started`, binary PCM frames are counted without decoding. The server
 emits a cumulative `audio.ack` after the configured number of accepted frames
 and forces the last pending acknowledgement before stop events. Empty,
-oversized, pre-start, and unlabelled frames produce recoverable
+odd-byte, oversized, pre-start, and unlabelled frames produce recoverable
 `empty_audio_frame`, `audio_frame_too_large`, `audio_not_live`, or
-`audio_metadata_required` errors. Reaching the maximum duration emits
+`audio_metadata_required` errors (`audio_frame_misaligned` covers odd-byte
+frames). Reaching the maximum duration emits
 `call_duration_exceeded` followed by `call.ended`. Control text larger than
 `LIVE_MAX_CONTROL_MESSAGE_BYTES` produces `command_too_large`.
 
-MediaRecorder chunks prove browser-to-server transport only. They are not
-decoded independently, transcribed, persisted, or sent to an LLM. Individual
-container chunks are not guaranteed to be standalone audio files. Task 3
-replaces this path with continuous AudioWorklet PCM16LE capture.
+The browser uses AudioWorklet for mono capture and a continuous resampler that
+reads the actual `AudioContext.sampleRate`; it does not assume browser media
+constraints changed the hardware rate. Stop waits for the worklet flush signal,
+encodes the last short frame, sends it, and only then sends the stop command.
+Audio is not persisted or sent to an AI provider until the transcription stage.
 
 ## Bounds and deployment assumptions
 

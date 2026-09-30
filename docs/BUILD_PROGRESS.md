@@ -203,5 +203,49 @@ required before claiming browser/device compatibility.
 
 ## Next task
 
-Task 3 — replace MediaRecorder container blobs with continuous AudioWorklet
-PCM16LE capture after re-verifying the current OpenAI audio contract.
+## Task 3 outcome
+
+### Implemented
+
+- Verified the official Realtime transcription contract and recorded the model,
+  PCM format, and unsupported provider VAD modes in `docs/STT_PROVIDER.md`.
+- Replaced MediaRecorder with AudioWorklet mono capture plus continuous,
+  stateful resampling from the actual AudioContext rate.
+- Added clipped signed PCM16LE encoding, 24 kHz mono 100 ms framing, and a
+  final short-frame flush before the stop command.
+- Backend now requires matching PCM metadata and rejects empty, oversized, and
+  odd-byte frames as well as audio received outside the live state.
+- Retained the 1 MiB browser WebSocket congestion cutoff and resource cleanup.
+
+### Verification
+
+```text
+backend/.venv/Scripts/python.exe -m pytest
+114 passed, 1 existing provider-library deprecation warning
+
+npm test -- --run
+8 files passed, 42 tests passed
+
+npm run lint
+passed
+
+npm run typecheck
+passed
+
+npm run format:check
+passed after formatting the two new PCM test/source files
+
+npm run build
+passed; the worklet is copied as a Vite public asset
+```
+
+### Manual check pending
+
+Real AudioWorklet microphone capture has not been exercised in a browser in
+this environment. Confirm that acknowledged PCM bytes rise, the microphone
+indicator turns off, repeated calls work, and permission denial is recoverable.
+
+## Next task
+
+Task 4 — add the isolated streaming transcription adapter with a deterministic
+fake and mocked OpenAI Realtime provider tests.

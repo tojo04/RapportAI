@@ -217,9 +217,12 @@ async def _handle_start(
             audio = command.payload.audio
             session.mark_started(
                 transport=audio.transport if audio is not None else None,
-                mime_type=audio.mime_type if audio is not None else None,
-                timeslice_ms=(
-                    audio.timeslice_ms if audio is not None else None
+                sample_rate_hz=(
+                    audio.sample_rate_hz if audio is not None else None
+                ),
+                channels=audio.channels if audio is not None else None,
+                frame_duration_ms=(
+                    audio.frame_duration_ms if audio is not None else None
                 ),
             )
 
@@ -376,15 +379,18 @@ async def _handle_audio_frame(
         if session.state is not CallState.LIVE:
             error_code = "audio_not_live"
             error_message = "Audio is accepted only while the call is live."
-        elif session.audio_transport != "media_recorder":
+        elif session.audio_transport != "pcm_s16le":
             error_code = "audio_metadata_required"
-            error_message = "Start the call with MediaRecorder audio metadata."
+            error_message = "Start the call with 24 kHz mono PCM metadata."
         elif not frame:
             error_code = "empty_audio_frame"
             error_message = "Empty audio frames are not accepted."
         elif len(frame) > settings.live_max_audio_frame_bytes:
             error_code = "audio_frame_too_large"
             error_message = "The audio frame exceeds the configured limit."
+        elif len(frame) % 2 != 0:
+            error_code = "audio_frame_misaligned"
+            error_message = "PCM audio frames must contain complete 16-bit samples."
         else:
             session.audio_frames_received += 1
             session.audio_bytes_received += len(frame)

@@ -109,23 +109,26 @@ def test_server_event_rejects_unknown_payload_fields() -> None:
     "audio",
     [
         {
-            "transport": "media_recorder",
-            "mime_type": "application/octet-stream",
-            "timeslice_ms": 250,
+            "transport": "pcm_s16le",
+            "sample_rate_hz": 48_000,
+            "channels": 1,
+            "frame_duration_ms": 100,
         },
         {
-            "transport": "media_recorder",
-            "mime_type": "audio/webm;codecs=opus",
-            "timeslice_ms": 10,
+            "transport": "pcm_s16le",
+            "sample_rate_hz": 24_000,
+            "channels": 2,
+            "frame_duration_ms": 100,
         },
         {
-            "transport": "pcm",
-            "mime_type": "audio/pcm",
-            "timeslice_ms": 250,
+            "transport": "pcm_s16le",
+            "sample_rate_hz": 24_000,
+            "channels": 1,
+            "frame_duration_ms": 10,
         },
     ],
 )
-def test_invalid_media_recorder_metadata_is_rejected(
+def test_invalid_pcm_metadata_is_rejected(
     audio: dict[str, object],
 ) -> None:
     with pytest.raises(ValidationError):
