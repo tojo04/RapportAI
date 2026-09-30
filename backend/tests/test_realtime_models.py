@@ -103,3 +103,37 @@ def test_server_event_rejects_unknown_payload_fields() -> None:
                 },
             }
         )
+
+
+@pytest.mark.parametrize(
+    "audio",
+    [
+        {
+            "transport": "media_recorder",
+            "mime_type": "application/octet-stream",
+            "timeslice_ms": 250,
+        },
+        {
+            "transport": "media_recorder",
+            "mime_type": "audio/webm;codecs=opus",
+            "timeslice_ms": 10,
+        },
+        {
+            "transport": "pcm",
+            "mime_type": "audio/pcm",
+            "timeslice_ms": 250,
+        },
+    ],
+)
+def test_invalid_media_recorder_metadata_is_rejected(
+    audio: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        CLIENT_COMMAND_ADAPTER.validate_python(
+            {
+                "protocol_version": 1,
+                "command_id": "start-1",
+                "type": "start",
+                "payload": {"audio": audio},
+            }
+        )

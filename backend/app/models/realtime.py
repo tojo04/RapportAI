@@ -9,6 +9,7 @@ from pydantic import (
     Field,
     StringConstraints,
     TypeAdapter,
+    field_validator,
 )
 
 
@@ -42,9 +43,31 @@ class ClientCommandBase(ProtocolModel):
     command_id: Identifier
 
 
+class MediaRecorderAudioConfig(ProtocolModel):
+    transport: Literal["media_recorder"]
+    mime_type: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+    ]
+    timeslice_ms: Annotated[int, Field(strict=True, ge=50, le=1_000)]
+
+    @field_validator("mime_type")
+    @classmethod
+    def validate_audio_mime_type(cls, value: str) -> str:
+        if not value.lower().startswith("audio/") or any(
+            character in value for character in ("\r", "\n")
+        ):
+            raise ValueError("MediaRecorder MIME type must describe audio.")
+        return value
+
+
+class StartPayload(ProtocolModel):
+    audio: MediaRecorderAudioConfig | None = None
+
+
 class StartCommand(ClientCommandBase):
     type: Literal["start"]
-    payload: EmptyPayload
+    payload: StartPayload
 
 
 class StopCommand(ClientCommandBase):
@@ -271,8 +294,15 @@ ServerEvent: TypeAlias = Annotated[
 SERVER_EVENT_ADAPTER = TypeAdapter(ServerEvent)
 
 
+class LiveTransportLimits(ProtocolModel):
+    max_call_seconds: Annotated[int, Field(strict=True, ge=1)]
+    max_frame_bytes: Annotated[int, Field(strict=True, ge=1)]
+    ack_every_frames: Annotated[int, Field(strict=True, ge=1)]
+
+
 class CreateCallResponse(ProtocolModel):
     protocol_version: Literal[1] = PROTOCOL_VERSION
     call_id: Identifier
     websocket_path: str
     state: Literal[CallState.IDLE] = CallState.IDLE
+    limits: LiveTransportLimits

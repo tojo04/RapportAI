@@ -27,6 +27,9 @@ def test_settings_use_safe_defaults(monkeypatch: MonkeyPatch) -> None:
         "LIVE_COMMAND_HISTORY_SIZE",
         "LIVE_MAX_CONTROL_MESSAGE_BYTES",
         "LIVE_QUEUE_PUT_TIMEOUT_MS",
+        "LIVE_MAX_AUDIO_FRAME_BYTES",
+        "LIVE_AUDIO_ACK_EVERY_FRAMES",
+        "LIVE_MAX_CALL_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -44,6 +47,9 @@ def test_settings_use_safe_defaults(monkeypatch: MonkeyPatch) -> None:
     assert settings.live_command_history_size == 512
     assert settings.live_max_control_message_bytes == 16_384
     assert settings.live_queue_put_timeout_ms == 1_000
+    assert settings.live_max_audio_frame_bytes == 262_144
+    assert settings.live_audio_ack_every_frames == 4
+    assert settings.live_max_call_seconds == 1_800
 
 
 def test_settings_read_and_trim_environment_values(
@@ -64,6 +70,9 @@ def test_settings_read_and_trim_environment_values(
     monkeypatch.setenv("LIVE_COMMAND_HISTORY_SIZE", "50")
     monkeypatch.setenv("LIVE_MAX_CONTROL_MESSAGE_BYTES", "2048")
     monkeypatch.setenv("LIVE_QUEUE_PUT_TIMEOUT_MS", "500")
+    monkeypatch.setenv("LIVE_MAX_AUDIO_FRAME_BYTES", "65536")
+    monkeypatch.setenv("LIVE_AUDIO_ACK_EVERY_FRAMES", "8")
+    monkeypatch.setenv("LIVE_MAX_CALL_SECONDS", "900")
 
     settings = get_settings()
 
@@ -82,6 +91,9 @@ def test_settings_read_and_trim_environment_values(
     assert settings.live_command_history_size == 50
     assert settings.live_max_control_message_bytes == 2_048
     assert settings.live_queue_put_timeout_ms == 500
+    assert settings.live_max_audio_frame_bytes == 65_536
+    assert settings.live_audio_ack_every_frames == 8
+    assert settings.live_max_call_seconds == 900
     assert "test-key" not in repr(settings)
 
 
@@ -105,6 +117,9 @@ def test_invalid_max_upload_size_is_rejected(
         "LIVE_COMMAND_HISTORY_SIZE",
         "LIVE_MAX_CONTROL_MESSAGE_BYTES",
         "LIVE_QUEUE_PUT_TIMEOUT_MS",
+        "LIVE_MAX_AUDIO_FRAME_BYTES",
+        "LIVE_AUDIO_ACK_EVERY_FRAMES",
+        "LIVE_MAX_CALL_SECONDS",
     ],
 )
 def test_invalid_live_limit_is_rejected(

@@ -6,7 +6,7 @@ Last updated: 2026-09-30
 
 - [x] Task 0 — Audit V1 and reconcile instruction files
 - [x] Task 1 — Define the protocol and session state machine
-- [ ] Task 2 — Prove browser-to-backend audio transport
+- [x] Task 2 — Prove browser-to-backend audio transport
 - [ ] Task 3 — Replace demo capture with correct PCM streaming
 - [ ] Task 4 — Add the streaming transcription adapter
 - [ ] Task 5 — Connect live transcription and implement stop/drain
@@ -144,8 +144,64 @@ No paid API call, microphone capture, or AI provider connection was used.
 - Binary audio returns `audio_not_supported` until Task 2.
 - The browser has protocol types only; live-call controls/capture begin in Task 2.
 
+## Task 2 outcome
+
+### Implemented
+
+- Added a live-call panel beside the unchanged upload workflow with Start/Stop,
+  authoritative connection state, elapsed time, cumulative frames/bytes, and
+  concise errors.
+- Added `useLiveCall` to isolate microphone, MediaRecorder, socket, timers, and
+  cleanup from presentation components.
+- Streams approximately 250 ms MediaRecorder blobs as binary frames and labels
+  them with the recorder's actual MIME type. It never calls this data PCM.
+- Flushes the recorder's final blob before sending `stop`, releases microphone
+  tracks promptly, and handles permission failure, connection loss, unmount,
+  repeated start/stop, and React StrictMode.
+- Terminates the call when `WebSocket.bufferedAmount` exceeds 1 MiB instead of
+  buffering audio without a bound.
+- Extended session creation with authoritative frame, acknowledgement, and
+  duration limits.
+- Backend accepts audio only in `live` state with MediaRecorder metadata,
+  rejects empty/oversized frames, counts accepted bytes/frames, emits throttled
+  `audio.ack`, forces a final acknowledgement before stop, and enforces maximum
+  call duration.
+- Audio is not decoded, persisted, transcribed, or sent to an AI model.
+
+### Verification
+
+```text
+backend/.venv/Scripts/python.exe -m pytest
+114 passed, 1 existing provider-library deprecation warning
+
+npm test -- --run
+7 files passed, 37 tests passed
+
+npm run lint
+passed
+
+npm run typecheck
+passed
+
+npm run format:check
+passed
+
+npm run build
+passed
+```
+
+Automated tests cover fake capture/socket cleanup, final-frame ordering,
+congestion, network loss, permission denial, StrictMode, acknowledgements,
+frame limits, and server duration enforcement.
+
+### Manual check pending
+
+The real-browser microphone check has not been run in this environment. Run the
+backend/frontend, speak for 10-20 seconds, verify byte count increases and the
+microphone indicator turns off, repeat once, then deny permission once. This is
+required before claiming browser/device compatibility.
+
 ## Next task
 
-Task 2 — add the live-call UI entry point and prove bounded browser microphone
-transport to FastAPI using accurately labeled MediaRecorder frames. Do not
-transcribe or decode those frames yet.
+Task 3 — replace MediaRecorder container blobs with continuous AudioWorklet
+PCM16LE capture after re-verifying the current OpenAI audio contract.

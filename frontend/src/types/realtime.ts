@@ -22,6 +22,11 @@ export interface CreateCallResponse {
   call_id: string;
   websocket_path: string;
   state: 'idle';
+  limits: {
+    max_call_seconds: number;
+    max_frame_bytes: number;
+    ack_every_frames: number;
+  };
 }
 
 interface ClientCommandEnvelope<TType extends string, TPayload> {
@@ -31,9 +36,15 @@ interface ClientCommandEnvelope<TType extends string, TPayload> {
   payload: TPayload;
 }
 
+export interface MediaRecorderAudioConfig {
+  transport: 'media_recorder';
+  mime_type: string;
+  timeslice_ms: number;
+}
+
 export type StartCommand = ClientCommandEnvelope<
   'start',
-  Record<string, never>
+  { audio?: MediaRecorderAudioConfig | null }
 >;
 export type StopCommand = ClientCommandEnvelope<'stop', Record<string, never>>;
 export type PingCommand = ClientCommandEnvelope<
@@ -240,6 +251,21 @@ function hasOnlyEmptyPayload(value: unknown): boolean {
   return isRecord(value) && Object.keys(value).length === 0;
 }
 
+function isMediaRecorderAudioConfig(
+  value: unknown,
+): value is MediaRecorderAudioConfig {
+  return (
+    isRecord(value) &&
+    value.transport === 'media_recorder' &&
+    isNonEmptyString(value.mime_type) &&
+    value.mime_type.toLowerCase().startsWith('audio/') &&
+    !/[\r\n]/u.test(value.mime_type) &&
+    isPositiveInteger(value.timeslice_ms) &&
+    value.timeslice_ms >= 50 &&
+    value.timeslice_ms <= 1_000
+  );
+}
+
 function isTranscriptPayload(value: unknown): value is TranscriptPayload {
   return (
     isRecord(value) &&
@@ -415,7 +441,11 @@ export function parseCreateCallResponse(value: unknown): CreateCallResponse {
     value.protocol_version !== REALTIME_PROTOCOL_VERSION ||
     !isNonEmptyString(value.call_id) ||
     !isNonEmptyString(value.websocket_path) ||
-    value.state !== 'idle'
+    value.state !== 'idle' ||
+    !isRecord(value.limits) ||
+    !isPositiveInteger(value.limits.max_call_seconds) ||
+    !isPositiveInteger(value.limits.max_frame_bytes) ||
+    !isPositiveInteger(value.limits.ack_every_frames)
   ) {
     throw new Error('The server returned malformed live-call data.');
   }
@@ -432,7 +462,15 @@ export function isClientCommand(value: unknown): value is ClientCommand {
     return false;
   }
 
-  if (value.type === 'start' || value.type === 'stop') {
+  if (value.type === 'start') {
+    return (
+      Object.keys(value.payload).every((key) => key === 'audio') &&
+      (value.payload.audio === undefined ||
+        value.payload.audio === null ||
+        isMediaRecorderAudioConfig(value.payload.audio))
+    );
+  }
+  if (value.type === 'stop') {
     return hasOnlyEmptyPayload(value.payload);
   }
   if (value.type === 'ping') {

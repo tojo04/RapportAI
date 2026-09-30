@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass, field
+from time import monotonic
 from typing import TypeAlias
 from uuid import uuid4
 
@@ -31,6 +32,13 @@ class LiveCallSession:
         repr=False,
     )
     writer_task: asyncio.Task[None] | None = field(default=None, repr=False)
+    started_at: float | None = None
+    audio_transport: str | None = None
+    audio_mime_type: str | None = None
+    audio_timeslice_ms: int | None = None
+    audio_frames_received: int = 0
+    audio_bytes_received: int = 0
+    audio_frames_acknowledged: int = 0
 
     async def attach(
         self,
@@ -69,6 +77,20 @@ class LiveCallSession:
         while len(self.processed_commands) > self.max_command_history:
             oldest_command_id = next(iter(self.processed_commands))
             del self.processed_commands[oldest_command_id]
+
+    def mark_started(
+        self,
+        *,
+        transport: str | None,
+        mime_type: str | None,
+        timeslice_ms: int | None,
+    ) -> None:
+        """Record transport metadata while the caller holds the session lock."""
+
+        self.started_at = monotonic()
+        self.audio_transport = transport
+        self.audio_mime_type = mime_type
+        self.audio_timeslice_ms = timeslice_ms
 
 
 class LiveCallStore:

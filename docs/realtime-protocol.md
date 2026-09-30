@@ -1,8 +1,8 @@
 # RapportAI realtime protocol v1
 
 This document is the wire contract between the RapportAI browser and FastAPI
-live-call endpoint. Protocol version 1 currently covers call creation and the
-JSON control lifecycle. Binary audio is deliberately rejected until Task 2.
+live-call endpoint. Protocol version 1 covers call creation, JSON control, and
+the temporary Task 2 MediaRecorder transport proof.
 
 ## Transport and session creation
 
@@ -19,7 +19,12 @@ The successful HTTP 201 response is:
   "protocol_version": 1,
   "call_id": "opaque-server-generated-id",
   "websocket_path": "/ws/calls/opaque-server-generated-id",
-  "state": "idle"
+  "state": "idle",
+  "limits": {
+    "max_call_seconds": 1800,
+    "max_frame_bytes": 262144,
+    "ack_every_frames": 4
+  }
 }
 ```
 
@@ -71,13 +76,22 @@ and idempotent within one process-local session.
   "protocol_version": 1,
   "command_id": "start-1",
   "type": "start",
-  "payload": {}
+  "payload": {
+    "audio": {
+      "transport": "media_recorder",
+      "mime_type": "audio/webm;codecs=opus",
+      "timeslice_ms": 250
+    }
+  }
 }
 ```
 
-Allowed only while `connecting`. A repeated `start` with the same command ID
-while the session is `live` returns `call.started` with `duplicate: true`. A new
-start while already live returns an `illegal_state` error.
+Allowed only while `connecting`. `payload.audio` is optional for control-only
+tests, but binary frames require it. The MIME value is the browser
+MediaRecorder's actual `mimeType`; WebM/Opus, Ogg/Opus, or MP4 data is never
+labelled PCM. A repeated `start` with the same command ID while the session is
+`live` returns `call.started` with `duplicate: true`. A new start while already
+live returns an `illegal_state` error.
 
 ### Stop
 
@@ -201,9 +215,19 @@ socket open. Before WebSocket acceptance, these close codes are used:
 | 4404 | Call ID does not exist in this worker                    |
 | 4409 | Session is connected, terminal, or otherwise unavailable |
 
-Binary frames currently produce recoverable `audio_not_supported` errors. Task
-2 will replace that behavior with bounded transport diagnostics. Control text
-larger than `LIVE_MAX_CONTROL_MESSAGE_BYTES` produces `command_too_large`.
+After `call.started`, binary frames are counted without decoding. The server
+emits a cumulative `audio.ack` after the configured number of accepted frames
+and forces the last pending acknowledgement before stop events. Empty,
+oversized, pre-start, and unlabelled frames produce recoverable
+`empty_audio_frame`, `audio_frame_too_large`, `audio_not_live`, or
+`audio_metadata_required` errors. Reaching the maximum duration emits
+`call_duration_exceeded` followed by `call.ended`. Control text larger than
+`LIVE_MAX_CONTROL_MESSAGE_BYTES` produces `command_too_large`.
+
+MediaRecorder chunks prove browser-to-server transport only. They are not
+decoded independently, transcribed, persisted, or sent to an LLM. Individual
+container chunks are not guaranteed to be standalone audio files. Task 3
+replaces this path with continuous AudioWorklet PCM16LE capture.
 
 ## Bounds and deployment assumptions
 
@@ -217,6 +241,9 @@ LIVE_OUTBOUND_QUEUE_SIZE=64
 LIVE_COMMAND_HISTORY_SIZE=512
 LIVE_MAX_CONTROL_MESSAGE_BYTES=16384
 LIVE_QUEUE_PUT_TIMEOUT_MS=1000
+LIVE_MAX_AUDIO_FRAME_BYTES=262144
+LIVE_AUDIO_ACK_EVERY_FRAMES=4
+LIVE_MAX_CALL_SECONDS=1800
 ```
 
 The store, command idempotency records, queues, and writer tasks live in one

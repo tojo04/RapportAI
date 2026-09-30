@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Iterator
+from dataclasses import replace
 from uuid import UUID
 
 import pytest
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app.main import app
+from app.core.config import get_settings
 from app.models.realtime import CallState
 from app.realtime.sessions import LiveCallStore
 
@@ -39,6 +41,21 @@ def command(command_id: str, command_type: str) -> dict[str, object]:
     }
 
 
+def media_start(command_id: str = "start-1") -> dict[str, object]:
+    return {
+        "protocol_version": 1,
+        "command_id": command_id,
+        "type": "start",
+        "payload": {
+            "audio": {
+                "transport": "media_recorder",
+                "mime_type": "audio/webm;codecs=opus",
+                "timeslice_ms": 250,
+            }
+        },
+    }
+
+
 def test_create_start_ping_and_stop_call() -> None:
     created = create_call()
     call_id = str(created["call_id"])
@@ -48,6 +65,11 @@ def test_create_start_ping_and_stop_call() -> None:
         "call_id": call_id,
         "websocket_path": f"/ws/calls/{call_id}",
         "state": "idle",
+        "limits": {
+            "max_call_seconds": 1_800,
+            "max_frame_bytes": 262_144,
+            "ack_every_frames": 4,
+        },
     }
 
     with client.websocket_connect(
@@ -178,7 +200,7 @@ def test_invalid_control_messages_return_typed_errors(
         assert event["payload"]["code"] == expected_code
 
 
-def test_binary_audio_is_rejected_until_transport_task() -> None:
+def test_binary_audio_before_start_is_rejected() -> None:
     created = create_call()
     with client.websocket_connect(
         str(created["websocket_path"]),
@@ -189,7 +211,99 @@ def test_binary_audio_is_rejected_until_transport_task() -> None:
         event = websocket.receive_json()
 
         assert event["type"] == "error"
-        assert event["payload"]["code"] == "audio_not_supported"
+        assert event["payload"]["code"] == "audio_not_live"
+
+
+def test_live_audio_is_counted_and_acknowledged_at_interval() -> None:
+    created = create_call()
+    with client.websocket_connect(
+        str(created["websocket_path"]),
+        headers={"origin": ALLOWED_ORIGIN},
+    ) as websocket:
+        websocket.receive_json()
+        websocket.send_json(media_start())
+        websocket.receive_json()
+
+        for _ in range(4):
+            websocket.send_bytes(b"audio")
+
+        ack = websocket.receive_json()
+        assert ack["type"] == "audio.ack"
+        assert ack["payload"] == {
+            "frames_received": 4,
+            "bytes_received": 20,
+        }
+
+
+def test_stop_flushes_pending_audio_ack_before_end_events() -> None:
+    created = create_call()
+    with client.websocket_connect(
+        str(created["websocket_path"]),
+        headers={"origin": ALLOWED_ORIGIN},
+    ) as websocket:
+        websocket.receive_json()
+        websocket.send_json(media_start())
+        websocket.receive_json()
+        websocket.send_bytes(b"final-frame")
+        websocket.send_json(command("stop-1", "stop"))
+
+        ack = websocket.receive_json()
+        stopping = websocket.receive_json()
+        ended = websocket.receive_json()
+        assert ack["type"] == "audio.ack"
+        assert ack["payload"]["frames_received"] == 1
+        assert ack["payload"]["bytes_received"] == 11
+        assert stopping["type"] == "call.stopping"
+        assert ended["type"] == "call.ended"
+
+
+def test_audio_requires_metadata_and_enforces_frame_limit() -> None:
+    created = create_call()
+    with client.websocket_connect(
+        str(created["websocket_path"]),
+        headers={"origin": ALLOWED_ORIGIN},
+    ) as websocket:
+        websocket.receive_json()
+        websocket.send_json(command("start-1", "start"))
+        websocket.receive_json()
+        websocket.send_bytes(b"unlabelled")
+        missing_metadata = websocket.receive_json()
+        assert missing_metadata["payload"]["code"] == "audio_metadata_required"
+
+    created = create_call()
+    with client.websocket_connect(
+        str(created["websocket_path"]),
+        headers={"origin": ALLOWED_ORIGIN},
+    ) as websocket:
+        websocket.receive_json()
+        websocket.send_json(media_start())
+        websocket.receive_json()
+        websocket.send_bytes(b"x" * 262_145)
+        oversized = websocket.receive_json()
+        assert oversized["payload"]["code"] == "audio_frame_too_large"
+
+
+def test_server_ends_call_at_duration_limit() -> None:
+    limited_settings = replace(get_settings(), live_max_call_seconds=1)
+    app.dependency_overrides[get_settings] = lambda: limited_settings
+
+    try:
+        created = create_call()
+        assert created["limits"]["max_call_seconds"] == 1
+        with client.websocket_connect(
+            str(created["websocket_path"]),
+            headers={"origin": ALLOWED_ORIGIN},
+        ) as websocket:
+            websocket.receive_json()
+            websocket.send_json(media_start())
+            websocket.receive_json()
+
+            duration_error = websocket.receive_json()
+            ended = websocket.receive_json()
+            assert duration_error["payload"]["code"] == "call_duration_exceeded"
+            assert ended["type"] == "call.ended"
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_oversized_control_message_is_rejected() -> None:

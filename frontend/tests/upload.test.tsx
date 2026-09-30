@@ -60,6 +60,10 @@ describe('audio upload workflow', () => {
 
     const fileInput = screen.getByLabelText('Choose audio file');
     await user.tab();
+    expect(
+      screen.getByRole('button', { name: 'Start Live Call' }),
+    ).toHaveFocus();
+    await user.tab();
 
     expect(fileInput).toHaveFocus();
     expect(fileInput).toHaveClass('focus-visible:outline');

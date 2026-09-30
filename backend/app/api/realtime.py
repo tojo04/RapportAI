@@ -1,5 +1,6 @@
 import asyncio
 import json
+from time import monotonic
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, status
@@ -10,6 +11,8 @@ from app.core.config import Settings, get_settings
 from app.models.realtime import (
     CLIENT_COMMAND_ADAPTER,
     PROTOCOL_VERSION,
+    AudioAckEvent,
+    AudioAckPayload,
     CallEndedEvent,
     CallEndedPayload,
     CallStartedEvent,
@@ -29,6 +32,7 @@ from app.models.realtime import (
     SessionReadyPayload,
     StartCommand,
     StopCommand,
+    LiveTransportLimits,
 )
 from app.realtime.sessions import (
     LiveCallAttachError,
@@ -59,12 +63,19 @@ def _live_call_store(websocket_or_request: Any) -> LiveCallStore:
     response_model=CreateCallResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_live_call(request: Request) -> CreateCallResponse:
-    return await _create_live_call_for_store(_live_call_store(request))
+async def create_live_call(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> CreateCallResponse:
+    return await _create_live_call_for_store(
+        _live_call_store(request),
+        settings,
+    )
 
 
 async def _create_live_call_for_store(
     store: LiveCallStore,
+    settings: Settings,
 ) -> CreateCallResponse:
     try:
         session = await store.create()
@@ -77,6 +88,11 @@ async def _create_live_call_for_store(
     return CreateCallResponse(
         call_id=session.call_id,
         websocket_path=f"/ws/calls/{session.call_id}",
+        limits=LiveTransportLimits(
+            max_call_seconds=settings.live_max_call_seconds,
+            max_frame_bytes=settings.live_max_audio_frame_bytes,
+            ack_every_frames=settings.live_audio_ack_every_frames,
+        ),
     )
 
 
@@ -198,6 +214,14 @@ async def _handle_start(
         else:
             session.remember_command(command.command_id, command.type)
             session.state = CallState.LIVE
+            audio = command.payload.audio
+            session.mark_started(
+                transport=audio.transport if audio is not None else None,
+                mime_type=audio.mime_type if audio is not None else None,
+                timeslice_ms=(
+                    audio.timeslice_ms if audio is not None else None
+                ),
+            )
 
     if error_kind == "conflict":
         return await _command_conflict(session, command.command_id)
@@ -310,14 +334,133 @@ async def _handle_ping(
     )
 
 
+async def _audio_ack(
+    session: LiveCallSession,
+    settings: Settings,
+    *,
+    force: bool = False,
+) -> AudioAckEvent | None:
+    async with session.lock:
+        pending_frames = (
+            session.audio_frames_received
+            - session.audio_frames_acknowledged
+        )
+        if pending_frames == 0 or (
+            not force
+            and pending_frames < settings.live_audio_ack_every_frames
+        ):
+            return None
+        session.audio_frames_acknowledged = session.audio_frames_received
+        frames_received = session.audio_frames_received
+        bytes_received = session.audio_bytes_received
+
+    return AudioAckEvent(
+        call_id=session.call_id,
+        seq=await session.next_sequence(),
+        payload=AudioAckPayload(
+            frames_received=frames_received,
+            bytes_received=bytes_received,
+        ),
+    )
+
+
+async def _handle_audio_frame(
+    session: LiveCallSession,
+    frame: bytes,
+    settings: Settings,
+) -> ServerEvent | None:
+    error_code: str | None = None
+    error_message = ""
+
+    async with session.lock:
+        if session.state is not CallState.LIVE:
+            error_code = "audio_not_live"
+            error_message = "Audio is accepted only while the call is live."
+        elif session.audio_transport != "media_recorder":
+            error_code = "audio_metadata_required"
+            error_message = "Start the call with MediaRecorder audio metadata."
+        elif not frame:
+            error_code = "empty_audio_frame"
+            error_message = "Empty audio frames are not accepted."
+        elif len(frame) > settings.live_max_audio_frame_bytes:
+            error_code = "audio_frame_too_large"
+            error_message = "The audio frame exceeds the configured limit."
+        else:
+            session.audio_frames_received += 1
+            session.audio_bytes_received += len(frame)
+
+    if error_code is not None:
+        return await _error_event(
+            session,
+            code=error_code,
+            message=error_message,
+            recoverable=True,
+        )
+    return await _audio_ack(session, settings)
+
+
+async def _remaining_call_seconds(
+    session: LiveCallSession,
+    maximum_seconds: int,
+) -> float | None:
+    async with session.lock:
+        if session.state is not CallState.LIVE or session.started_at is None:
+            return None
+        return maximum_seconds - (monotonic() - session.started_at)
+
+
+async def _receive_message(
+    websocket: WebSocket,
+    session: LiveCallSession,
+    settings: Settings,
+) -> dict[str, Any]:
+    remaining = await _remaining_call_seconds(
+        session,
+        settings.live_max_call_seconds,
+    )
+    if remaining is None:
+        return await websocket.receive()
+    if remaining <= 0:
+        raise TimeoutError
+    return await asyncio.wait_for(websocket.receive(), timeout=remaining)
+
+
+async def _duration_limit_events(
+    session: LiveCallSession,
+) -> list[ServerEvent]:
+    error = await _error_event(
+        session,
+        code="call_duration_exceeded",
+        message="The call reached the configured duration limit.",
+        recoverable=False,
+    )
+    async with session.lock:
+        session.state = CallState.ENDED
+    ended = CallEndedEvent(
+        call_id=session.call_id,
+        seq=await session.next_sequence(),
+        payload=CallEndedPayload(
+            state=CallState.ENDED,
+            transcript_complete=True,
+        ),
+    )
+    return [error, ended]
+
+
 async def _handle_command(
     session: LiveCallSession,
     command: ClientCommand,
+    settings: Settings,
 ) -> list[ServerEvent]:
     if isinstance(command, StartCommand):
         return [await _handle_start(session, command)]
     if isinstance(command, StopCommand):
-        return await _handle_stop(session, command)
+        events: list[ServerEvent] = []
+        pending_ack = await _audio_ack(session, settings, force=True)
+        if pending_ack is not None:
+            events.append(pending_ack)
+        events.extend(await _handle_stop(session, command))
+        return events
     return [await _handle_ping(session, command)]
 
 
@@ -407,19 +550,28 @@ async def live_call_socket(
         )
         await _enqueue(session, ready, settings)
         while True:
-            message = await websocket.receive()
+            try:
+                message = await _receive_message(
+                    websocket,
+                    session,
+                    settings,
+                )
+            except TimeoutError:
+                for event in await _duration_limit_events(session):
+                    await _enqueue(session, event, settings)
+                break
             if message["type"] == "websocket.disconnect":
                 break
 
             binary = message.get("bytes")
             if binary is not None:
-                event = await _error_event(
+                event = await _handle_audio_frame(
                     session,
-                    code="audio_not_supported",
-                    message="Binary audio is not accepted until transport is enabled.",
-                    recoverable=True,
+                    binary,
+                    settings,
                 )
-                await _enqueue(session, event, settings)
+                if event is not None:
+                    await _enqueue(session, event, settings)
                 continue
 
             text = message.get("text")
@@ -456,7 +608,7 @@ async def live_call_socket(
                 await _enqueue(session, event, settings)
                 continue
 
-            for event in await _handle_command(session, command):
+            for event in await _handle_command(session, command, settings):
                 await _enqueue(session, event, settings)
     except (WebSocketDisconnect, RuntimeError, OSError):
         pass

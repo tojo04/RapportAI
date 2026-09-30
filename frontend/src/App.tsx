@@ -3,6 +3,7 @@ import { useState } from 'react';
 import AnalysisResults from './components/AnalysisResults';
 import AudioUploader from './components/AudioUploader';
 import ErrorMessage from './components/ErrorMessage';
+import LiveCallPanel from './components/LiveCallPanel';
 import ScoreBreakdown from './components/ScoreBreakdown';
 import ScoreCard from './components/ScoreCard';
 import { analyzeCall } from './services/api';
@@ -58,6 +59,8 @@ function App() {
         </p>
 
         <div className="mt-10 space-y-5">
+          <LiveCallPanel />
+
           <AudioUploader
             isLoading={isLoading}
             onFileSelect={handleFileSelect}

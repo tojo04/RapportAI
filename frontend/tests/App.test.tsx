@@ -14,5 +14,11 @@ describe('App', () => {
         /structured insights and an explainable call-quality score/i,
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Start Live Call' }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: 'Stop Live Call' }),
+    ).toBeDisabled();
   });
 });

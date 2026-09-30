@@ -24,6 +24,9 @@ class Settings:
     live_command_history_size: int = 512
     live_max_control_message_bytes: int = 16_384
     live_queue_put_timeout_ms: int = 1_000
+    live_max_audio_frame_bytes: int = 262_144
+    live_audio_ack_every_frames: int = 4
+    live_max_call_seconds: int = 1_800
 
     @property
     def browser_origins(self) -> tuple[str, ...]:
@@ -102,5 +105,17 @@ def get_settings() -> Settings:
         live_queue_put_timeout_ms=_positive_integer_environment_value(
             "LIVE_QUEUE_PUT_TIMEOUT_MS",
             1_000,
+        ),
+        live_max_audio_frame_bytes=_positive_integer_environment_value(
+            "LIVE_MAX_AUDIO_FRAME_BYTES",
+            262_144,
+        ),
+        live_audio_ack_every_frames=_positive_integer_environment_value(
+            "LIVE_AUDIO_ACK_EVERY_FRAMES",
+            4,
+        ),
+        live_max_call_seconds=_positive_integer_environment_value(
+            "LIVE_MAX_CALL_SECONDS",
+            1_800,
         ),
     )

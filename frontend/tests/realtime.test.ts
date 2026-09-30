@@ -70,12 +70,22 @@ describe('realtime protocol validation', () => {
         call_id: 'call-1',
         websocket_path: '/ws/calls/call-1',
         state: 'idle',
+        limits: {
+          max_call_seconds: 1_800,
+          max_frame_bytes: 262_144,
+          ack_every_frames: 4,
+        },
       }),
     ).toEqual({
       protocol_version: 1,
       call_id: 'call-1',
       websocket_path: '/ws/calls/call-1',
       state: 'idle',
+      limits: {
+        max_call_seconds: 1_800,
+        max_frame_bytes: 262_144,
+        ack_every_frames: 4,
+      },
     });
   });
 
@@ -94,6 +104,37 @@ describe('realtime protocol validation', () => {
         command_id: 'command-1',
         type: 'start',
         payload: { unexpected: true },
+      }),
+    ).toBe(false);
+  });
+
+  it('validates accurately labelled MediaRecorder metadata', () => {
+    expect(
+      isClientCommand({
+        protocol_version: 1,
+        command_id: 'command-1',
+        type: 'start',
+        payload: {
+          audio: {
+            transport: 'media_recorder',
+            mime_type: 'audio/webm;codecs=opus',
+            timeslice_ms: 250,
+          },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      isClientCommand({
+        protocol_version: 1,
+        command_id: 'command-1',
+        type: 'start',
+        payload: {
+          audio: {
+            transport: 'media_recorder',
+            mime_type: 'audio/pcm',
+            timeslice_ms: 10,
+          },
+        },
       }),
     ).toBe(false);
   });
