@@ -20,6 +20,13 @@ def test_settings_use_safe_defaults(monkeypatch: MonkeyPatch) -> None:
         "OPENAI_ANALYSIS_MODEL",
         "MAX_UPLOAD_MB",
         "FRONTEND_ORIGIN",
+        "ALLOWED_ORIGINS",
+        "MAX_ACTIVE_LIVE_CALLS",
+        "MAX_RETAINED_LIVE_CALLS",
+        "LIVE_OUTBOUND_QUEUE_SIZE",
+        "LIVE_COMMAND_HISTORY_SIZE",
+        "LIVE_MAX_CONTROL_MESSAGE_BYTES",
+        "LIVE_QUEUE_PUT_TIMEOUT_MS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -30,6 +37,13 @@ def test_settings_use_safe_defaults(monkeypatch: MonkeyPatch) -> None:
     assert settings.openai_analysis_model is None
     assert settings.max_upload_mb == 20
     assert settings.frontend_origin == "http://localhost:5173"
+    assert settings.browser_origins == ("http://localhost:5173",)
+    assert settings.max_active_live_calls == 10
+    assert settings.max_retained_live_calls == 100
+    assert settings.live_outbound_queue_size == 64
+    assert settings.live_command_history_size == 512
+    assert settings.live_max_control_message_bytes == 16_384
+    assert settings.live_queue_put_timeout_ms == 1_000
 
 
 def test_settings_read_and_trim_environment_values(
@@ -40,6 +54,16 @@ def test_settings_read_and_trim_environment_values(
     monkeypatch.setenv("OPENAI_ANALYSIS_MODEL", " analysis-model ")
     monkeypatch.setenv("MAX_UPLOAD_MB", "12")
     monkeypatch.setenv("FRONTEND_ORIGIN", " http://example.test ")
+    monkeypatch.setenv(
+        "ALLOWED_ORIGINS",
+        " http://example.test, https://second.example.test ",
+    )
+    monkeypatch.setenv("MAX_ACTIVE_LIVE_CALLS", "4")
+    monkeypatch.setenv("MAX_RETAINED_LIVE_CALLS", "40")
+    monkeypatch.setenv("LIVE_OUTBOUND_QUEUE_SIZE", "20")
+    monkeypatch.setenv("LIVE_COMMAND_HISTORY_SIZE", "50")
+    monkeypatch.setenv("LIVE_MAX_CONTROL_MESSAGE_BYTES", "2048")
+    monkeypatch.setenv("LIVE_QUEUE_PUT_TIMEOUT_MS", "500")
 
     settings = get_settings()
 
@@ -48,6 +72,16 @@ def test_settings_read_and_trim_environment_values(
     assert settings.openai_analysis_model == "analysis-model"
     assert settings.max_upload_mb == 12
     assert settings.frontend_origin == "http://example.test"
+    assert settings.browser_origins == (
+        "http://example.test",
+        "https://second.example.test",
+    )
+    assert settings.max_active_live_calls == 4
+    assert settings.max_retained_live_calls == 40
+    assert settings.live_outbound_queue_size == 20
+    assert settings.live_command_history_size == 50
+    assert settings.live_max_control_message_bytes == 2_048
+    assert settings.live_queue_put_timeout_ms == 500
     assert "test-key" not in repr(settings)
 
 
@@ -57,6 +91,27 @@ def test_invalid_max_upload_size_is_rejected(
     monkeypatch: MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MAX_UPLOAD_MB", invalid_value)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        get_settings()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "MAX_ACTIVE_LIVE_CALLS",
+        "MAX_RETAINED_LIVE_CALLS",
+        "LIVE_OUTBOUND_QUEUE_SIZE",
+        "LIVE_COMMAND_HISTORY_SIZE",
+        "LIVE_MAX_CONTROL_MESSAGE_BYTES",
+        "LIVE_QUEUE_PUT_TIMEOUT_MS",
+    ],
+)
+def test_invalid_live_limit_is_rejected(
+    name: str,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(name, "0")
 
     with pytest.raises(ValueError, match="positive integer"):
         get_settings()

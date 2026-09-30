@@ -5,7 +5,7 @@ Last updated: 2026-09-30
 ## Task checklist
 
 - [x] Task 0 — Audit V1 and reconcile instruction files
-- [ ] Task 1 — Define the protocol and session state machine
+- [x] Task 1 — Define the protocol and session state machine
 - [ ] Task 2 — Prove browser-to-backend audio transport
 - [ ] Task 3 — Replace demo capture with correct PCM streaming
 - [ ] Task 4 — Add the streaming transcription adapter
@@ -89,9 +89,63 @@ No paid OpenAI request or private recording was used.
   3.11. Compatibility must continue to be tested against the supported range
   in CI when CI is introduced.
 
+## Task 1 outcome
+
+### Implemented
+
+- Added versioned Pydantic command/event models and matching TypeScript
+  discriminated unions with runtime validation.
+- Added `POST /api/calls`, returning a backend-generated opaque call ID and its
+  `/ws/calls/{call_id}` path.
+- Added the in-memory lifecycle `idle -> connecting -> live -> stopping ->
+ended`, with `interrupted` disconnect cleanup and a reserved `failed` state.
+- Implemented `start`, `stop`, and `ping`, including command-ID collision
+  detection, duplicate start acknowledgement, and harmless duplicate stop.
+- Added one bounded outbound writer per connected call and bounded shutdown so
+  child tasks are awaited or cancelled.
+- Enforced configured browser Origin checks independently from CORS, bounded
+  control messages, active calls, terminal-session retention, command history,
+  and outbound queues.
+- Rejected unknown calls, terminal/already-connected sessions, malformed
+  payloads, incompatible versions, illegal transitions, and binary audio.
+- Documented event envelopes, payloads, transitions, close codes, single-worker
+  ownership, and the no-live-resume policy in `docs/realtime-protocol.md`.
+- Kept `POST /api/analyze-call`, its models, and V1 scoring unchanged.
+
+### Verification
+
+```text
+backend/.venv/Scripts/python.exe -m pytest
+104 passed, 1 existing provider-library deprecation warning
+
+npm test -- --run
+5 files passed, 28 tests passed
+
+npm run lint
+passed
+
+npm run typecheck
+passed
+
+npm run format:check
+passed
+
+npm run build
+passed
+```
+
+No paid API call, microphone capture, or AI provider connection was used.
+
+### Current limitations
+
+- Live sessions are process-local and require one backend worker.
+- Terminal sessions and command IDs have bounded in-memory retention; durable
+  history is intentionally deferred.
+- Binary audio returns `audio_not_supported` until Task 2.
+- The browser has protocol types only; live-call controls/capture begin in Task 2.
+
 ## Next task
 
-Task 1 — define and test the versioned realtime protocol, in-memory live-call
-state machine, session creation route, and WebSocket control lifecycle. Do not
-connect microphone audio or an AI provider in that task.
-
+Task 2 — add the live-call UI entry point and prove bounded browser microphone
+transport to FastAPI using accurately labeled MediaRecorder frames. Do not
+transcribe or decode those frames yet.
