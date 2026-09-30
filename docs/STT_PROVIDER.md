@@ -63,3 +63,16 @@ server-side key in `backend/.env`, then run from `backend`:
 This command incurs API usage and was not run automatically. Without it,
 account/model access and real provider behavior remain unverified; all default
 tests use mocks or the deterministic fake.
+
+## Task 5 orchestration
+
+Each active call owns one adapter and bounded audio, transcript, and semantic
+queues. The WebSocket handler validates/counts PCM before enqueueing it. A
+provider reader normalizes events, and a transcript worker emits protocol
+partials/finals without waiting for future classification work.
+
+Stop drains accepted audio, explicitly flushes the last nonempty turn, then
+waits for the adapter's pending-final count and any visible partials to clear.
+The wait is bounded by `LIVE_STT_FINALIZATION_TIMEOUT_MS` (2 seconds by
+default). Missing completion is represented as an interrupted call with
+`transcript_complete: false`; it is never reported as successful finalization.

@@ -1,6 +1,7 @@
 import asyncio
 import json
 from time import monotonic
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, status
@@ -40,6 +41,15 @@ from app.realtime.sessions import (
     LiveCallSession,
     LiveCallStore,
     OutboundItem,
+)
+from app.realtime.coordinator import (
+    LiveCoordinatorError,
+    LiveTranscriptionCoordinator,
+)
+from app.services.streaming_transcription import (
+    OpenAIStreamingTranscriber,
+    StreamingTranscriber,
+    StreamingTranscriptionError,
 )
 
 
@@ -120,10 +130,12 @@ async def _enqueue(
         raise RuntimeError("The live-call outbound queue is unavailable.")
 
     try:
-        await asyncio.wait_for(
-            queue.put(event),
-            timeout=settings.live_queue_put_timeout_ms / 1_000,
-        )
+        async with session.outbound_lock:
+            event.seq = session.next_outbound_sequence()
+            await asyncio.wait_for(
+                queue.put(event),
+                timeout=settings.live_queue_put_timeout_ms / 1_000,
+            )
     except TimeoutError as exc:
         async with session.lock:
             session.state = CallState.FAILED
@@ -245,6 +257,8 @@ async def _handle_start(
 async def _handle_stop(
     session: LiveCallSession,
     command: StopCommand,
+    coordinator: LiveTranscriptionCoordinator | None = None,
+    event_sink: Callable[[ServerEvent], Awaitable[None]] | None = None,
 ) -> list[ServerEvent]:
     duplicate = False
     error_kind: str | None = None
@@ -253,7 +267,11 @@ async def _handle_stop(
         previous_type = session.processed_commands.get(command.command_id)
         if previous_type is not None and previous_type != command.type:
             error_kind = "conflict"
-        elif session.state is CallState.ENDED:
+        elif session.state in {
+            CallState.ENDED,
+            CallState.INTERRUPTED,
+            CallState.FAILED,
+        }:
             if previous_type is None:
                 session.remember_command(command.command_id, command.type)
             duplicate = True
@@ -276,10 +294,10 @@ async def _handle_stop(
                 call_id=session.call_id,
                 seq=await session.next_sequence(),
                 payload=CallEndedPayload(
-                    state=CallState.ENDED,
+                    state=session.state,
                     command_id=command.command_id,
                     duplicate=True,
-                    transcript_complete=True,
+                    transcript_complete=session.state is CallState.ENDED,
                 ),
             )
         ]
@@ -292,18 +310,27 @@ async def _handle_stop(
             command_id=command.command_id,
         ),
     )
+    if event_sink is not None:
+        await event_sink(stopping_event)
+    transcript_complete = True
+    if coordinator is not None:
+        transcript_complete = await coordinator.stop()
     async with session.lock:
-        session.state = CallState.ENDED
+        session.state = (
+            CallState.ENDED
+            if transcript_complete
+            else CallState.INTERRUPTED
+        )
     ended_event = CallEndedEvent(
         call_id=session.call_id,
         seq=await session.next_sequence(),
         payload=CallEndedPayload(
-            state=CallState.ENDED,
+            state=session.state,
             command_id=command.command_id,
-            transcript_complete=True,
+            transcript_complete=transcript_complete,
         ),
     )
-    return [stopping_event, ended_event]
+    return [ended_event] if event_sink is not None else [stopping_event, ended_event]
 
 
 async def _handle_ping(
@@ -433,6 +460,7 @@ async def _receive_message(
 
 async def _duration_limit_events(
     session: LiveCallSession,
+    coordinator: LiveTranscriptionCoordinator | None = None,
 ) -> list[ServerEvent]:
     error = await _error_event(
         session,
@@ -440,14 +468,21 @@ async def _duration_limit_events(
         message="The call reached the configured duration limit.",
         recoverable=False,
     )
+    transcript_complete = (
+        await coordinator.stop() if coordinator is not None else True
+    )
     async with session.lock:
-        session.state = CallState.ENDED
+        session.state = (
+            CallState.ENDED
+            if transcript_complete
+            else CallState.INTERRUPTED
+        )
     ended = CallEndedEvent(
         call_id=session.call_id,
         seq=await session.next_sequence(),
         payload=CallEndedPayload(
-            state=CallState.ENDED,
-            transcript_complete=True,
+            state=session.state,
+            transcript_complete=transcript_complete,
         ),
     )
     return [error, ended]
@@ -457,6 +492,8 @@ async def _handle_command(
     session: LiveCallSession,
     command: ClientCommand,
     settings: Settings,
+    coordinator: LiveTranscriptionCoordinator | None = None,
+    event_sink: Callable[[ServerEvent], Awaitable[None]] | None = None,
 ) -> list[ServerEvent]:
     if isinstance(command, StartCommand):
         return [await _handle_start(session, command)]
@@ -464,10 +501,41 @@ async def _handle_command(
         events: list[ServerEvent] = []
         pending_ack = await _audio_ack(session, settings, force=True)
         if pending_ack is not None:
-            events.append(pending_ack)
-        events.extend(await _handle_stop(session, command))
+            if event_sink is not None:
+                await event_sink(pending_ack)
+            else:
+                events.append(pending_ack)
+        events.extend(
+            await _handle_stop(
+                session,
+                command,
+                coordinator,
+                event_sink,
+            )
+        )
         return events
     return [await _handle_ping(session, command)]
+
+
+def _create_streaming_transcriber(
+    websocket: WebSocket,
+    settings: Settings,
+) -> StreamingTranscriber:
+    factory = getattr(
+        websocket.app.state,
+        "streaming_transcriber_factory",
+        None,
+    )
+    if factory is not None:
+        return factory()
+    if settings.openai_api_key is None:
+        raise StreamingTranscriptionError(
+            "Streaming transcription is not configured."
+        )
+    return OpenAIStreamingTranscriber(
+        api_key=settings.openai_api_key,
+        model=settings.live_stt_model,
+    )
 
 
 async def _shutdown_writer(
@@ -533,6 +601,7 @@ async def live_call_socket(
     queue: asyncio.Queue[OutboundItem] = asyncio.Queue(
         maxsize=settings.live_outbound_queue_size
     )
+    coordinator: LiveTranscriptionCoordinator | None = None
     try:
         await session.attach(queue)
     except LiveCallAttachError:
@@ -563,7 +632,10 @@ async def live_call_socket(
                     settings,
                 )
             except TimeoutError:
-                for event in await _duration_limit_events(session):
+                for event in await _duration_limit_events(
+                    session,
+                    coordinator,
+                ):
                     await _enqueue(session, event, settings)
                 break
             if message["type"] == "websocket.disconnect":
@@ -578,6 +650,27 @@ async def live_call_socket(
                 )
                 if event is not None:
                     await _enqueue(session, event, settings)
+                if not isinstance(event, ErrorEvent):
+                    if coordinator is None:
+                        missing = await _error_event(
+                            session,
+                            code="transcription_not_started",
+                            message="The transcription stream is unavailable.",
+                            recoverable=False,
+                        )
+                        await _enqueue(session, missing, settings)
+                        break
+                    try:
+                        await coordinator.accept_audio(binary)
+                    except LiveCoordinatorError as exc:
+                        overloaded = await _error_event(
+                            session,
+                            code="transcription_overloaded",
+                            message=str(exc),
+                            recoverable=False,
+                        )
+                        await _enqueue(session, overloaded, settings)
+                        break
                 continue
 
             text = message.get("text")
@@ -614,12 +707,77 @@ async def live_call_socket(
                 await _enqueue(session, event, settings)
                 continue
 
-            for event in await _handle_command(session, command, settings):
+            events = await _handle_command(
+                session,
+                command,
+                settings,
+                coordinator,
+                lambda event: _enqueue(session, event, settings),
+            )
+            if isinstance(command, StartCommand):
+                started = next(
+                    (
+                        event
+                        for event in events
+                        if isinstance(event, CallStartedEvent)
+                        and not event.payload.duplicate
+                    ),
+                    None,
+                )
+                if started is not None and command.payload.audio is not None:
+                    try:
+                        transcriber = _create_streaming_transcriber(
+                            websocket,
+                            settings,
+                        )
+                        coordinator = LiveTranscriptionCoordinator(
+                            call_id=call_id,
+                            transcriber=transcriber,
+                            event_sink=lambda event: _enqueue(
+                                session,
+                                event,
+                                settings,
+                            ),
+                            next_sequence=session.next_sequence,
+                            queue_size=settings.live_outbound_queue_size,
+                            queue_timeout_seconds=(
+                                settings.live_queue_put_timeout_ms / 1_000
+                            ),
+                            finalization_timeout_seconds=(
+                                settings.live_stt_finalization_timeout_ms
+                                / 1_000
+                            ),
+                        )
+                        await coordinator.start()
+                    except StreamingTranscriptionError as exc:
+                        async with session.lock:
+                            session.state = CallState.FAILED
+                        events = [
+                            await _error_event(
+                                session,
+                                code="transcription_start_failed",
+                                message=str(exc),
+                                recoverable=False,
+                                command_id=command.command_id,
+                            ),
+                            CallEndedEvent(
+                                call_id=call_id,
+                                seq=await session.next_sequence(),
+                                payload=CallEndedPayload(
+                                    state=CallState.FAILED,
+                                    command_id=command.command_id,
+                                    transcript_complete=False,
+                                ),
+                            ),
+                        ]
+            for event in events:
                 await _enqueue(session, event, settings)
     except (WebSocketDisconnect, RuntimeError, OSError):
         pass
     finally:
         try:
+            if coordinator is not None:
+                await coordinator.interrupt()
             await _shutdown_writer(
                 session,
                 settings.live_queue_put_timeout_ms,

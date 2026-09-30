@@ -24,9 +24,11 @@ class LiveCallSession:
     max_command_history: int
     state: CallState = CallState.IDLE
     sequence: int = 0
+    outbound_sequence: int = 0
     connected: bool = False
     processed_commands: dict[str, str] = field(default_factory=dict)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    outbound_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     outbound_queue: asyncio.Queue[OutboundItem] | None = field(
         default=None,
         repr=False,
@@ -70,6 +72,12 @@ class LiveCallSession:
         async with self.lock:
             self.sequence += 1
             return self.sequence
+
+    def next_outbound_sequence(self) -> int:
+        """Assign wire order while the caller holds outbound_lock."""
+
+        self.outbound_sequence += 1
+        return self.outbound_sequence
 
     def remember_command(self, command_id: str, command_type: str) -> None:
         """Record a command while the caller holds the session lock."""

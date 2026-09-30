@@ -283,5 +283,54 @@ availability, and real provider latency/event behavior remain unverified.
 
 ## Next task
 
-Task 5 — connect accepted PCM to the adapter, stream normalized partial/final
-events to React, and implement bounded stop/drain cleanup.
+## Task 5 outcome
+
+### Implemented
+
+- Connected validated PCM frames to one server-side streaming transcriber per
+  call through independent bounded audio, transcript, and semantic-work paths.
+- Emits normalized `transcript.partial` and `transcript.final` events. React
+  replaces drafts, deduplicates by segment ID, sorts by audio-turn order, and
+  labels the single-microphone role honestly as Unknown speaker.
+- Stop follows browser PCM flush, stops server acceptance, drains accepted
+  audio, flushes a nonempty provider turn, waits a bounded time for finals,
+  closes worker/provider resources, and emits `call.ended`.
+- Missing provider completion preserves rendered finals and ends as
+  `interrupted` with `transcript_complete: false` plus a visible UI warning.
+- Disconnect performs bounded cleanup without audio replay or live resume.
+- An outbound lock assigns sequence numbers in actual enqueue order when
+  provider and socket tasks emit concurrently.
+
+### Verification
+
+```text
+backend/.venv/Scripts/python.exe -m pytest
+129 passed, 1 existing provider-library deprecation warning
+
+npm test -- --run
+8 files passed, 44 tests passed
+
+npm run lint
+passed
+
+npm run typecheck
+passed
+
+npm run format:check
+passed after formatting the two changed React files
+
+npm run build
+passed
+```
+
+### Manual check pending
+
+The browser/provider end-to-end check was not run because it requires a real
+microphone and an explicitly paid OpenAI connection. Speak, pause, speak again,
+and stop immediately after the last word; verify both turns remain, the mic is
+released, and a forced timeout is shown as incomplete.
+
+## Next task
+
+Task 6 — add deterministic offline transcript replay fixtures using the same
+partial/final handling path.

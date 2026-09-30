@@ -203,6 +203,9 @@ Partial and final transcript events share this shape:
   because provider final completions may arrive out of order.
 - Partial content replaces the currently displayed partial for that segment.
 - A final replaces that partial and enters durable context once.
+- The browser sorts by `order`, so finals remain in audio-turn order even when
+  the provider completes a later turn first. Duplicate finals do not create a
+  second row.
 - Unavailable speaker, timing, and language values remain `null`/`unknown` and
   are never guessed.
 
@@ -248,7 +251,27 @@ LIVE_QUEUE_PUT_TIMEOUT_MS=1000
 LIVE_MAX_AUDIO_FRAME_BYTES=262144
 LIVE_AUDIO_ACK_EVERY_FRAMES=4
 LIVE_MAX_CALL_SECONDS=1800
+LIVE_STT_MODEL=gpt-live-transcribe
+LIVE_STT_FINALIZATION_TIMEOUT_MS=2000
 ```
+
+## Transcription stop and drain
+
+Accepted PCM enters a bounded per-call audio queue. Provider events use a
+separate bounded transcript queue; finalized segments are offered to a third
+semantic-work queue that cannot delay transcript delivery. Task 7 will consume
+that semantic path.
+
+On Stop, the browser first flushes and sends its final PCM frame. The server
+then stops accepting audio, emits `call.stopping`, drains accepted audio,
+commits the provider's last nonempty turn, and waits up to
+`LIVE_STT_FINALIZATION_TIMEOUT_MS` for pending finals. It closes every provider
+and worker task before `call.ended`. A timeout produces state `interrupted` with
+`transcript_complete: false`; the UI retains visible finalized text and warns
+that it may be incomplete. Empty/silent calls do not send empty commits.
+
+A network disconnect runs the same bounded coordinator cleanup but keeps the
+session state `interrupted`. Live resume and audio replay remain unsupported.
 
 The store, command idempotency records, queues, and writer tasks live in one
 backend process. Terminal process-local sessions and per-session command IDs

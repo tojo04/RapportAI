@@ -209,6 +209,95 @@ describe('useLiveCall', () => {
     expect(track.stop).not.toHaveBeenCalled();
   });
 
+  it('replaces partials with finals and sorts out-of-order completions', async () => {
+    const { dependencies, socket } = setup();
+    const hook = await reachLiveState(dependencies, socket);
+    const payload = {
+      revision: 1,
+      speaker_id: null,
+      speaker_role: 'unknown',
+      start_ms: null,
+      end_ms: null,
+      language: null,
+    };
+
+    act(() => {
+      socket.receive(
+        serverEvent('transcript.partial', {
+          ...payload,
+          segment_id: 'item-2',
+          order: 1,
+          text: 'Sec',
+        }),
+      );
+      socket.receive(
+        serverEvent('transcript.final', {
+          ...payload,
+          segment_id: 'item-2',
+          order: 1,
+          revision: 2,
+          text: 'Second turn',
+        }),
+      );
+      socket.receive(
+        serverEvent('transcript.final', {
+          ...payload,
+          segment_id: 'item-1',
+          order: 0,
+          text: 'First turn',
+        }),
+      );
+      socket.receive(
+        serverEvent('transcript.partial', {
+          ...payload,
+          segment_id: 'item-2',
+          order: 1,
+          revision: 3,
+          text: 'Late partial must not replace a final',
+        }),
+      );
+    });
+
+    expect(hook.result.current.transcript).toEqual([
+      expect.objectContaining({ text: 'First turn', isFinal: true }),
+      expect.objectContaining({ text: 'Second turn', isFinal: true }),
+    ]);
+  });
+
+  it('keeps a final arriving during stop and reports incomplete finalization', async () => {
+    const { dependencies, socket } = setup();
+    const hook = await reachLiveState(dependencies, socket);
+    await act(async () => hook.result.current.stop());
+
+    act(() => {
+      socket.receive(
+        serverEvent('transcript.final', {
+          segment_id: 'last-item',
+          order: 0,
+          revision: 1,
+          text: 'Last word',
+          speaker_id: null,
+          speaker_role: 'unknown',
+          start_ms: null,
+          end_ms: null,
+          language: null,
+        }),
+      );
+      socket.receive(
+        serverEvent('call.ended', {
+          state: 'interrupted',
+          command_id: 'command-2',
+          duplicate: false,
+          transcript_complete: false,
+        }),
+      );
+    });
+
+    expect(hook.result.current.transcript[0].text).toBe('Last word');
+    expect(hook.result.current.status).toBe('interrupted');
+    expect(hook.result.current.error).toMatch(/may be incomplete/i);
+  });
+
   it('releases capture and reports network loss', async () => {
     const { dependencies, socket, track } = setup();
     const hook = await reachLiveState(dependencies, socket);

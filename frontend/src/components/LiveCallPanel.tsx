@@ -30,7 +30,7 @@ function LiveCallPanel() {
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-            Realtime transport preview
+            Realtime transcription
           </p>
           <h2
             className="mt-2 text-lg font-semibold text-white"
@@ -39,9 +39,9 @@ function LiveCallPanel() {
             Analyze a live conversation
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">
-            Streams this browser microphone to the backend. This transport test
-            does not transcribe audio yet and does not capture a remote meeting
-            participant separately.
+            Streams this browser microphone to the backend and replaces live
+            drafts with finalized transcript turns. A single microphone cannot
+            identify or separately capture remote participants.
           </p>
         </div>
 
@@ -79,6 +79,37 @@ function LiveCallPanel() {
           <ErrorMessage message={liveCall.error} />
         </div>
       )}
+
+      <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+        <h3 className="text-sm font-semibold text-slate-200">
+          Live transcript
+        </h3>
+        <div aria-live="polite" className="mt-3 space-y-3">
+          {liveCall.transcript.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Transcript turns will appear after speech is detected.
+            </p>
+          ) : (
+            liveCall.transcript.map((segment) => (
+              <div key={segment.segment_id} className="text-sm leading-6">
+                <span className="mr-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Unknown speaker
+                </span>
+                <span
+                  className={
+                    segment.isFinal ? 'text-slate-100' : 'italic text-slate-400'
+                  }
+                >
+                  {segment.text}
+                </span>
+                {!segment.isFinal && (
+                  <span className="ml-2 text-xs text-emerald-300">Live</span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <button

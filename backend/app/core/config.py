@@ -28,6 +28,7 @@ class Settings:
     live_audio_ack_every_frames: int = 4
     live_max_call_seconds: int = 1_800
     live_stt_model: str = "gpt-live-transcribe"
+    live_stt_finalization_timeout_ms: int = 2_000
 
     @property
     def browser_origins(self) -> tuple[str, ...]:
@@ -122,5 +123,9 @@ def get_settings() -> Settings:
         live_stt_model=(
             os.getenv("LIVE_STT_MODEL", "gpt-live-transcribe").strip()
             or "gpt-live-transcribe"
+        ),
+        live_stt_finalization_timeout_ms=_positive_integer_environment_value(
+            "LIVE_STT_FINALIZATION_TIMEOUT_MS",
+            2_000,
         ),
     )

@@ -13,6 +13,7 @@ import {
   type CreateCallResponse,
   type StartCommand,
   type StopCommand,
+  type TranscriptPayload,
 } from '../types/realtime';
 
 const MAX_SOCKET_BUFFERED_BYTES = 1_048_576;
@@ -51,8 +52,13 @@ export interface LiveCallViewModel {
   framesReceived: number;
   bytesReceived: number;
   error: string | null;
+  transcript: LiveTranscriptSegment[];
   start: () => Promise<void>;
   stop: () => Promise<void>;
+}
+
+export interface LiveTranscriptSegment extends TranscriptPayload {
+  isFinal: boolean;
 }
 
 function defaultCommandId(): string {
@@ -97,6 +103,7 @@ export function useLiveCall(
   const [framesReceived, setFramesReceived] = useState(0);
   const [bytesReceived, setBytesReceived] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<LiveTranscriptSegment[]>([]);
 
   const mountedRef = useRef(false);
   const statusRef = useRef<CallState>('idle');
@@ -280,6 +287,7 @@ export function useLiveCall(
       setElapsedSeconds(0);
       setFramesReceived(0);
       setBytesReceived(0);
+      setTranscript([]);
     }
 
     try {
@@ -355,10 +363,46 @@ export function useLiveCall(
                 setBytesReceived(event.payload.bytes_received);
               }
               break;
+            case 'transcript.partial':
+            case 'transcript.final':
+              if (mountedRef.current) {
+                setTranscript((current) => {
+                  const existing = current.find(
+                    (segment) =>
+                      segment.segment_id === event.payload.segment_id,
+                  );
+                  if (
+                    existing?.isFinal ||
+                    (existing !== undefined &&
+                      existing.revision >= event.payload.revision)
+                  ) {
+                    return current;
+                  }
+                  const next = current.filter(
+                    (segment) =>
+                      segment.segment_id !== event.payload.segment_id,
+                  );
+                  next.push({
+                    ...event.payload,
+                    isFinal: event.type === 'transcript.final',
+                  });
+                  return next.sort(
+                    (left, right) =>
+                      left.order - right.order ||
+                      left.segment_id.localeCompare(right.segment_id),
+                  );
+                });
+              }
+              break;
             case 'call.stopping':
               updateStatus('stopping');
               break;
             case 'call.ended':
+              if (!event.payload.transcript_complete && mountedRef.current) {
+                setError(
+                  'The call ended before transcription fully finalized. The visible transcript may be incomplete.',
+                );
+              }
               updateStatus(event.payload.state);
               cleanup();
               break;
@@ -406,6 +450,7 @@ export function useLiveCall(
     framesReceived,
     bytesReceived,
     error,
+    transcript,
     start,
     stop,
   };

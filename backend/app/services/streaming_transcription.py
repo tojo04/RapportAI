@@ -32,6 +32,9 @@ class TranscriptEvent:
 
 
 class StreamingTranscriber(Protocol):
+    @property
+    def pending_final_count(self) -> int: ...
+
     async def connect(self) -> None: ...
 
     async def send_audio(self, pcm: bytes) -> None: ...
@@ -129,6 +132,11 @@ class OpenAIStreamingTranscriber:
         self._orders: dict[str, int] = {}
         self._previous_items: dict[str, str | None] = {}
         self._finalized: set[str] = set()
+        self._pending_final_count = 0
+
+    @property
+    def pending_final_count(self) -> int:
+        return self._pending_final_count
 
     async def connect(self) -> None:
         if self._connection is not None:
@@ -207,6 +215,7 @@ class OpenAIStreamingTranscriber:
         connection = self._require_connection()
         try:
             await self._timed(connection.input_audio_buffer.commit())
+            self._pending_final_count += 1
         except TimeoutError as exc:
             raise StreamingTranscriptionError(
                 "Streaming transcription turn commit timed out."
@@ -281,6 +290,7 @@ class OpenAIStreamingTranscriber:
             text = transcript.strip()
             self._partial_text.pop(item_id, None)
             self._finalized.add(item_id)
+            self._pending_final_count = max(0, self._pending_final_count - 1)
             kind = "final"
 
         return TranscriptEvent(
@@ -339,10 +349,15 @@ class FakeStreamingTranscriber:
         self.connected = False
         self.closed = False
         self._pending_audio = False
+        self._pending_final_count = 0
         self._events: asyncio.Queue[TranscriptEvent | None] = asyncio.Queue()
 
     async def connect(self) -> None:
         self.connected = True
+
+    @property
+    def pending_final_count(self) -> int:
+        return self._pending_final_count
 
     async def send_audio(self, pcm: bytes) -> None:
         if not self.connected or self.closed:
@@ -355,12 +370,15 @@ class FakeStreamingTranscriber:
             return False
         self.commits += 1
         self._pending_audio = False
+        self._pending_final_count += 1
         return True
 
     async def flush(self) -> bool:
         return await self.finish_turn()
 
     async def emit(self, event: TranscriptEvent) -> None:
+        if event.kind == "final":
+            self._pending_final_count = max(0, self._pending_final_count - 1)
         await self._events.put(event)
 
     async def events(self) -> AsyncIterator[TranscriptEvent]:

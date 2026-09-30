@@ -11,19 +11,66 @@ from app.main import app
 from app.core.config import get_settings
 from app.models.realtime import CallState
 from app.realtime.sessions import LiveCallStore
+from app.services.streaming_transcription import (
+    FakeStreamingTranscriber,
+    TranscriptEvent,
+)
 
 
 ALLOWED_ORIGIN = "http://localhost:5173"
 client = TestClient(app)
 
 
+class TransportOnlyTranscriber(FakeStreamingTranscriber):
+    async def flush(self) -> bool:
+        return False
+
+
+class ScriptedTranscriptTranscriber(TransportOnlyTranscriber):
+    def __init__(self) -> None:
+        super().__init__()
+        self._audio_received = asyncio.Event()
+
+    async def send_audio(self, pcm: bytes) -> None:
+        await super().send_audio(pcm)
+        self._audio_received.set()
+
+    async def events(self):  # type: ignore[no-untyped-def]
+        await self._audio_received.wait()
+        yield TranscriptEvent(
+            kind="partial",
+            segment_id="item-1",
+            order=0,
+            revision=1,
+            text="Hello",
+            provider_event_id="provider-1",
+            provider_item_id="item-1",
+        )
+        yield TranscriptEvent(
+            kind="final",
+            segment_id="item-1",
+            order=0,
+            revision=2,
+            text="Hello there",
+            provider_event_id="provider-2",
+            provider_item_id="item-1",
+        )
+
+
 @pytest.fixture(autouse=True)
 def isolated_live_call_store() -> Iterator[LiveCallStore]:
     original_store = app.state.live_call_store
+    original_factory = getattr(
+        app.state,
+        "streaming_transcriber_factory",
+        None,
+    )
     store = LiveCallStore(max_active_calls=10)
     app.state.live_call_store = store
+    app.state.streaming_transcriber_factory = TransportOnlyTranscriber
     yield store
     app.state.live_call_store = original_store
+    app.state.streaming_transcriber_factory = original_factory
 
 
 def create_call() -> dict[str, object]:
@@ -113,6 +160,7 @@ def test_create_start_ping_and_stop_call() -> None:
         ]
         assert sequences == sorted(sequences)
         assert len(set(sequences)) == len(sequences)
+        assert sequences[0] == 1
 
 
 def test_duplicate_start_and_stop_are_idempotent() -> None:
@@ -258,6 +306,69 @@ def test_stop_flushes_pending_audio_ack_before_end_events() -> None:
         assert ended["type"] == "call.ended"
 
 
+def test_pcm_audio_emits_partial_then_final_transcript() -> None:
+    app.state.streaming_transcriber_factory = ScriptedTranscriptTranscriber
+    created = create_call()
+    with client.websocket_connect(
+        str(created["websocket_path"]),
+        headers={"origin": ALLOWED_ORIGIN},
+    ) as websocket:
+        websocket.receive_json()
+        websocket.send_json(pcm_start())
+        websocket.receive_json()
+        websocket.send_bytes(b"\x01\x00" * 2_400)
+
+        partial = websocket.receive_json()
+        final = websocket.receive_json()
+        assert partial["type"] == "transcript.partial"
+        assert partial["payload"]["text"] == "Hello"
+        assert final["type"] == "transcript.final"
+        assert final["payload"]["text"] == "Hello there"
+        assert final["payload"]["speaker_role"] == "unknown"
+
+        websocket.send_json(command("stop-1", "stop"))
+        ack = websocket.receive_json()
+        stopping = websocket.receive_json()
+        ended = websocket.receive_json()
+        assert ack["type"] == "audio.ack"
+        assert stopping["type"] == "call.stopping"
+        assert ended["payload"]["transcript_complete"] is True
+
+
+def test_missing_provider_completion_marks_transcript_incomplete() -> None:
+    limited_settings = replace(
+        get_settings(),
+        live_stt_finalization_timeout_ms=10,
+    )
+    app.dependency_overrides[get_settings] = lambda: limited_settings
+    app.state.streaming_transcriber_factory = FakeStreamingTranscriber
+    try:
+        created = create_call()
+        with client.websocket_connect(
+            str(created["websocket_path"]),
+            headers={"origin": ALLOWED_ORIGIN},
+        ) as websocket:
+            websocket.receive_json()
+            websocket.send_json(pcm_start())
+            websocket.receive_json()
+            websocket.send_bytes(b"\x01\x00")
+            websocket.send_json(command("stop-1", "stop"))
+
+            ack = websocket.receive_json()
+            stopping = websocket.receive_json()
+            ended = websocket.receive_json()
+            assert ack["type"] == "audio.ack"
+            assert stopping["type"] == "call.stopping"
+            assert ended["payload"] == {
+                "state": "interrupted",
+                "command_id": "stop-1",
+                "duplicate": False,
+                "transcript_complete": False,
+            }
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_audio_requires_metadata_and_enforces_frame_limit() -> None:
     created = create_call()
     with client.websocket_connect(
@@ -371,6 +482,29 @@ def test_disconnect_marks_call_interrupted_and_cleans_writer(
     assert session.connected is False
     assert session.writer_task is None
     assert session.outbound_queue is None
+
+
+def test_disconnect_closes_live_transcriber() -> None:
+    instances: list[TransportOnlyTranscriber] = []
+
+    def factory() -> TransportOnlyTranscriber:
+        instance = TransportOnlyTranscriber()
+        instances.append(instance)
+        return instance
+
+    app.state.streaming_transcriber_factory = factory
+    created = create_call()
+    with client.websocket_connect(
+        str(created["websocket_path"]),
+        headers={"origin": ALLOWED_ORIGIN},
+    ) as websocket:
+        websocket.receive_json()
+        websocket.send_json(pcm_start())
+        websocket.receive_json()
+        websocket.send_bytes(b"\x01\x00")
+
+    assert len(instances) == 1
+    assert instances[0].closed is True
 
 
 def test_ended_call_cannot_accept_a_new_socket(
