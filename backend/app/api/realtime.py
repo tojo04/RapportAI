@@ -28,11 +28,14 @@ from app.models.realtime import (
     PingCommand,
     PongEvent,
     PongPayload,
+    SalesEvent,
+    SalesEventPayload,
     ServerEvent,
     SessionReadyEvent,
     SessionReadyPayload,
     StartCommand,
     StopCommand,
+    WarningEvent,
     LiveTransportLimits,
 )
 from app.realtime.sessions import (
@@ -50,6 +53,11 @@ from app.services.streaming_transcription import (
     OpenAIStreamingTranscriber,
     StreamingTranscriber,
     StreamingTranscriptionError,
+)
+from app.services.sales_detection import (
+    LiveSalesDetector,
+    OpenAISalesEventClassifier,
+    SalesEventClassifier,
 )
 
 
@@ -538,6 +546,61 @@ def _create_streaming_transcriber(
     )
 
 
+def _create_sales_detector(
+    websocket: WebSocket,
+    session: LiveCallSession,
+    settings: Settings,
+) -> LiveSalesDetector | None:
+    factory = getattr(
+        websocket.app.state,
+        "sales_event_classifier_factory",
+        None,
+    )
+    classifier: SalesEventClassifier | None = None
+    if factory is not None:
+        classifier = factory()
+    elif settings.openai_api_key and settings.live_classification_model:
+        classifier = OpenAISalesEventClassifier(
+            api_key=settings.openai_api_key,
+            model=settings.live_classification_model,
+        )
+    if classifier is None:
+        return None
+
+    async def emit_sales_event(payload: SalesEventPayload) -> None:
+        await _enqueue(
+            session,
+            SalesEvent(
+                call_id=session.call_id,
+                seq=await session.next_sequence(),
+                payload=payload,
+            ),
+            settings,
+        )
+
+    async def emit_warning(message: str) -> None:
+        await _enqueue(
+            session,
+            WarningEvent(
+                call_id=session.call_id,
+                seq=await session.next_sequence(),
+                payload=DiagnosticPayload(
+                    code="sales_detection_failed",
+                    message=message,
+                    recoverable=True,
+                    state=session.state,
+                ),
+            ),
+            settings,
+        )
+
+    return LiveSalesDetector(
+        classifier=classifier,
+        event_sink=emit_sales_event,
+        warning_sink=emit_warning,
+    )
+
+
 async def _shutdown_writer(
     session: LiveCallSession,
     timeout_ms: int,
@@ -746,6 +809,11 @@ async def live_call_socket(
                             finalization_timeout_seconds=(
                                 settings.live_stt_finalization_timeout_ms
                                 / 1_000
+                            ),
+                            sales_detector=_create_sales_detector(
+                                websocket,
+                                session,
+                                settings,
                             ),
                         )
                         await coordinator.start()

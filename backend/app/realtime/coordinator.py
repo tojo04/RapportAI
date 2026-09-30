@@ -9,6 +9,7 @@ from app.services.streaming_transcription import (
     StreamingTranscriptionError,
     TranscriptEvent,
 )
+from app.services.sales_detection import DetectionSegment, LiveSalesDetector
 
 
 class LiveCoordinatorError(RuntimeError):
@@ -31,6 +32,7 @@ class LiveTranscriptionCoordinator:
         queue_size: int,
         queue_timeout_seconds: float,
         finalization_timeout_seconds: float,
+        sales_detector: LiveSalesDetector | None = None,
     ) -> None:
         self._call_id = call_id
         self._transcriber = transcriber
@@ -38,6 +40,7 @@ class LiveTranscriptionCoordinator:
         self._next_sequence = next_sequence
         self._queue_timeout = queue_timeout_seconds
         self._finalization_timeout = finalization_timeout_seconds
+        self._sales_detector = sales_detector
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue(queue_size)
         self._transcript_queue: asyncio.Queue[TranscriptEvent | None] = (
             asyncio.Queue(queue_size)
@@ -58,6 +61,8 @@ class LiveTranscriptionCoordinator:
 
     async def start(self) -> None:
         await self._transcriber.connect()
+        if self._sales_detector is not None:
+            await self._sales_detector.start()
         self._accepting_audio = True
         self._tasks = [
             asyncio.create_task(self._audio_worker(), name=f"audio-{self._call_id}"),
@@ -97,6 +102,15 @@ class LiveTranscriptionCoordinator:
                 )
                 await self._transcriber.flush()
                 await self._wait_for_finals()
+                await asyncio.wait_for(
+                    self._semantic_queue.join(),
+                    timeout=self._finalization_timeout,
+                )
+                if self._sales_detector is not None:
+                    await asyncio.wait_for(
+                        self._sales_detector.flush(),
+                        timeout=self._finalization_timeout,
+                    )
             except (TimeoutError, StreamingTranscriptionError):
                 complete = False
             if self.failure is not None:
@@ -185,9 +199,14 @@ class LiveTranscriptionCoordinator:
             try:
                 if event is None:
                     return
-                # Task 7 consumes this independent path. Task 5 only proves that
-                # semantic work cannot block provider transcript delivery.
-                await asyncio.sleep(0)
+                if self._sales_detector is not None:
+                    await self._sales_detector.submit(
+                        DetectionSegment(
+                            segment_id=event.segment_id,
+                            order=event.order,
+                            text=event.text,
+                        )
+                    )
             finally:
                 self._semantic_queue.task_done()
 
@@ -195,6 +214,8 @@ class LiveTranscriptionCoordinator:
         if self._closed:
             return
         self._closed = True
+        if self._sales_detector is not None:
+            await self._sales_detector.close()
         await self._transcriber.close()
         for queue in (self._audio_queue, self._transcript_queue, self._semantic_queue):
             try:

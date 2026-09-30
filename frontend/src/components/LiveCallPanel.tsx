@@ -111,6 +111,32 @@ function LiveCallPanel() {
         </div>
       </div>
 
+      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+        <h3 className="text-sm font-semibold text-slate-200">Sales signals</h3>
+        {liveCall.signals.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">
+            Evidence-backed signals will appear from finalized transcript text.
+          </p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {liveCall.signals.map((signal) => (
+              <li
+                className="rounded-lg border border-slate-800 p-3 text-sm"
+                key={signal.sales_event_id}
+              >
+                <span className="font-semibold capitalize text-emerald-300">
+                  {signal.category.replace('_', ' ')}
+                </span>
+                <span className="ml-2 text-slate-200">{signal.subject}</span>
+                <blockquote className="mt-1 text-xs text-slate-500">
+                  “{signal.evidence_span}”
+                </blockquote>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <button
           className="min-h-11 rounded-xl bg-emerald-400 px-5 py-2.5 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"

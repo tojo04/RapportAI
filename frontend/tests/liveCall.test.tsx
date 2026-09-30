@@ -298,6 +298,26 @@ describe('useLiveCall', () => {
     expect(hook.result.current.error).toMatch(/may be incomplete/i);
   });
 
+  it('adds each evidence-backed sales signal once', async () => {
+    const { dependencies, socket } = setup();
+    const hook = await reachLiveState(dependencies, socket);
+    const signal = {
+      sales_event_id: 'signal-1',
+      category: 'pricing',
+      evidence_segment_ids: ['item-1'],
+      evidence_span: 'How much does it cost?',
+      subject: 'plan price',
+      details: {},
+    };
+
+    act(() => {
+      socket.receive(serverEvent('sales.event', signal));
+      socket.receive(serverEvent('sales.event', signal));
+    });
+
+    expect(hook.result.current.signals).toEqual([signal]);
+  });
+
   it('releases capture and reports network loss', async () => {
     const { dependencies, socket, track } = setup();
     const hook = await reachLiveState(dependencies, socket);

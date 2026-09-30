@@ -32,6 +32,7 @@ def test_settings_use_safe_defaults(monkeypatch: MonkeyPatch) -> None:
         "LIVE_MAX_CALL_SECONDS",
         "LIVE_STT_MODEL",
         "LIVE_STT_FINALIZATION_TIMEOUT_MS",
+        "LIVE_CLASSIFICATION_MODEL",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -54,6 +55,7 @@ def test_settings_use_safe_defaults(monkeypatch: MonkeyPatch) -> None:
     assert settings.live_max_call_seconds == 1_800
     assert settings.live_stt_model == "gpt-live-transcribe"
     assert settings.live_stt_finalization_timeout_ms == 2_000
+    assert settings.live_classification_model is None
 
 
 def test_settings_read_and_trim_environment_values(
@@ -79,6 +81,7 @@ def test_settings_read_and_trim_environment_values(
     monkeypatch.setenv("LIVE_MAX_CALL_SECONDS", "900")
     monkeypatch.setenv("LIVE_STT_MODEL", " custom-live-transcribe ")
     monkeypatch.setenv("LIVE_STT_FINALIZATION_TIMEOUT_MS", "750")
+    monkeypatch.setenv("LIVE_CLASSIFICATION_MODEL", " classifier-model ")
 
     settings = get_settings()
 
@@ -102,6 +105,7 @@ def test_settings_read_and_trim_environment_values(
     assert settings.live_max_call_seconds == 900
     assert settings.live_stt_model == "custom-live-transcribe"
     assert settings.live_stt_finalization_timeout_ms == 750
+    assert settings.live_classification_model == "classifier-model"
     assert "test-key" not in repr(settings)
 
 

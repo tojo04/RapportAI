@@ -348,3 +348,18 @@ partial/final handling path.
 ## Next task
 
 Task 7 — detect validated, evidence-backed sales signals from final segments.
+
+## Task 7 outcome
+
+- Added validated six-category sales-signal schemas and exact evidence checks.
+- Added an injected structured-output classifier and bounded live detector with
+  threshold/trailing triggers, one in-flight request, coalescing, watermarking,
+  overlap deduplication, and recoverable warnings.
+- Connected only finalized transcript segments to detection and rendered a
+  deduplicated evidence-backed signal list in React.
+- Focused verification: 24 backend detection/route tests and 8 frontend live
+  hook tests passed; lint and TypeScript checks passed. No paid call ran.
+
+## Next task
+
+Task 8 — add versioned PostgreSQL/pgvector knowledge ingestion.

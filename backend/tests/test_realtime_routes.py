@@ -15,6 +15,7 @@ from app.services.streaming_transcription import (
     FakeStreamingTranscriber,
     TranscriptEvent,
 )
+from app.services.sales_detection import FakeSalesEventClassifier, SalesSignalCandidate
 
 
 ALLOWED_ORIGIN = "http://localhost:5173"
@@ -65,12 +66,19 @@ def isolated_live_call_store() -> Iterator[LiveCallStore]:
         "streaming_transcriber_factory",
         None,
     )
+    original_classifier_factory = getattr(
+        app.state,
+        "sales_event_classifier_factory",
+        None,
+    )
     store = LiveCallStore(max_active_calls=10)
     app.state.live_call_store = store
     app.state.streaming_transcriber_factory = TransportOnlyTranscriber
+    app.state.sales_event_classifier_factory = None
     yield store
     app.state.live_call_store = original_store
     app.state.streaming_transcriber_factory = original_factory
+    app.state.sales_event_classifier_factory = original_classifier_factory
 
 
 def create_call() -> dict[str, object]:
@@ -333,6 +341,43 @@ def test_pcm_audio_emits_partial_then_final_transcript() -> None:
         assert ack["type"] == "audio.ack"
         assert stopping["type"] == "call.stopping"
         assert ended["payload"]["transcript_complete"] is True
+
+
+def test_final_transcript_emits_validated_sales_signal() -> None:
+    app.state.streaming_transcriber_factory = ScriptedTranscriptTranscriber
+    app.state.sales_event_classifier_factory = lambda: FakeSalesEventClassifier(
+        [
+            [
+                SalesSignalCandidate(
+                    category="question",
+                    evidence_segment_ids=["item-1"],
+                    evidence_span="Hello there",
+                    subject="greeting question",
+                    details=[],
+                )
+            ]
+        ]
+    )
+    created = create_call()
+    with client.websocket_connect(
+        str(created["websocket_path"]),
+        headers={"origin": ALLOWED_ORIGIN},
+    ) as websocket:
+        websocket.receive_json()
+        websocket.send_json(pcm_start())
+        websocket.receive_json()
+        websocket.send_bytes(b"\x01\x00" * 2_400)
+        assert websocket.receive_json()["type"] == "transcript.partial"
+        assert websocket.receive_json()["type"] == "transcript.final"
+        websocket.send_json(command("stop-1", "stop"))
+        assert websocket.receive_json()["type"] == "audio.ack"
+        assert websocket.receive_json()["type"] == "call.stopping"
+        signal = websocket.receive_json()
+        ended = websocket.receive_json()
+        assert signal["type"] == "sales.event"
+        assert signal["payload"]["category"] == "question"
+        assert signal["payload"]["evidence_segment_ids"] == ["item-1"]
+        assert ended["type"] == "call.ended"
 
 
 def test_missing_provider_completion_marks_transcript_incomplete() -> None:

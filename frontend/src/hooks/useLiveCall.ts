@@ -14,6 +14,7 @@ import {
   type StartCommand,
   type StopCommand,
   type TranscriptPayload,
+  type SalesEventPayload,
 } from '../types/realtime';
 
 const MAX_SOCKET_BUFFERED_BYTES = 1_048_576;
@@ -53,6 +54,7 @@ export interface LiveCallViewModel {
   bytesReceived: number;
   error: string | null;
   transcript: LiveTranscriptSegment[];
+  signals: SalesEventPayload[];
   start: () => Promise<void>;
   stop: () => Promise<void>;
 }
@@ -104,6 +106,7 @@ export function useLiveCall(
   const [bytesReceived, setBytesReceived] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<LiveTranscriptSegment[]>([]);
+  const [signals, setSignals] = useState<SalesEventPayload[]>([]);
 
   const mountedRef = useRef(false);
   const statusRef = useRef<CallState>('idle');
@@ -288,6 +291,7 @@ export function useLiveCall(
       setFramesReceived(0);
       setBytesReceived(0);
       setTranscript([]);
+      setSignals([]);
     }
 
     try {
@@ -394,6 +398,18 @@ export function useLiveCall(
                 });
               }
               break;
+            case 'sales.event':
+              if (mountedRef.current) {
+                setSignals((current) =>
+                  current.some(
+                    (signal) =>
+                      signal.sales_event_id === event.payload.sales_event_id,
+                  )
+                    ? current
+                    : [...current, event.payload],
+                );
+              }
+              break;
             case 'call.stopping':
               updateStatus('stopping');
               break;
@@ -451,6 +467,7 @@ export function useLiveCall(
     bytesReceived,
     error,
     transcript,
+    signals,
     start,
     stop,
   };
