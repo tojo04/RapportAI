@@ -260,6 +260,3 @@ The system instructions require evidence-only extraction, empty lists for missin
 
 These are intentionally outside the current MVP.
 
-## Two-minute interview explanation
-
-The React frontend sends an MP3 or WAV file to FastAPI as multipart form data. FastAPI validates the upload, writes it to a safely named temporary file, and guarantees cleanup in a `finally` block. A backend service sends the file to OpenAI for transcription. A second service sends the transcript to the Responses API and requests a result matching a Pydantic schema, so free-form model text is never trusted directly. The language model extracts semantic evidence and bounded ratings, while a pure Python function calculates the final score and category. FastAPI returns one typed JSON response, and React renders the score, breakdown, insights, and transcript. All external calls are mocked in tests, which keeps verification fast, deterministic, and free of API charges.
