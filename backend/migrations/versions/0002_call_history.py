@@ -31,16 +31,20 @@ def upgrade() -> None:
         sa.UniqueConstraint("call_id", "segment_id", name="uq_transcript_call_segment"),
     )
     op.create_table("sales_events",
-        sa.Column("sales_event_id", sa.String(128), primary_key=True),
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("sales_event_id", sa.String(128), nullable=False),
         sa.Column("call_id", sa.String(64), sa.ForeignKey("calls.call_id", ondelete="CASCADE"), nullable=False),
         sa.Column("event_order", sa.Integer(), nullable=False),
         sa.Column("payload", sa.JSON(), nullable=False),
+        sa.UniqueConstraint("call_id", "sales_event_id", name="uq_sales_event_call_identity"),
     )
     op.create_table("suggestions",
-        sa.Column("suggestion_id", sa.String(128), primary_key=True),
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("suggestion_id", sa.String(128), nullable=False),
         sa.Column("call_id", sa.String(64), sa.ForeignKey("calls.call_id", ondelete="CASCADE"), nullable=False),
         sa.Column("suggestion_order", sa.Integer(), nullable=False),
         sa.Column("payload", sa.JSON(), nullable=False),
+        sa.UniqueConstraint("call_id", "suggestion_id", name="uq_suggestion_call_identity"),
     )
 
 

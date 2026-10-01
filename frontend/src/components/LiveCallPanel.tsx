@@ -138,27 +138,40 @@ function LiveCallPanel() {
       </div>
 
       <div className="mt-4 rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-4">
-        <h3 className="text-sm font-semibold text-slate-200">Grounded coaching</h3>
+        <h3 className="text-sm font-semibold text-slate-200">
+          Grounded coaching
+        </h3>
         {liveCall.suggestions.length === 0 ? (
           <p className="mt-3 text-sm text-slate-500">
-            Suggestions appear only when live signals have usable context. Verify
-            cited demo knowledge before relying on it.
+            Suggestions appear only when live signals have usable context.
+            Verify cited demo knowledge before relying on it.
           </p>
         ) : (
           <div className="mt-3 space-y-3">
             {liveCall.suggestions.map((suggestion) => (
-              <article className="rounded-lg border border-cyan-400/20 p-3" key={suggestion.suggestion_id}>
+              <article
+                className="rounded-lg border border-cyan-400/20 p-3"
+                key={suggestion.suggestion_id}
+              >
                 <p className="text-sm text-cyan-50">{suggestion.text}</p>
                 {suggestion.insufficient_evidence && (
-                  <p className="mt-2 text-xs text-amber-300">Knowledge evidence is insufficient; this is a clarifying prompt.</p>
+                  <p className="mt-2 text-xs text-amber-300">
+                    Knowledge evidence is insufficient; this is a clarifying
+                    prompt.
+                  </p>
                 )}
                 {suggestion.sources.map((source) => (
-                  <details className="mt-2 text-xs text-slate-400" key={source.chunk_id}>
+                  <details
+                    className="mt-2 text-xs text-slate-400"
+                    key={source.chunk_id}
+                  >
                     <summary className="cursor-pointer text-cyan-300">
                       {source.source_path} — {source.heading}
                     </summary>
                     <p className="mt-2 whitespace-pre-wrap">{source.text}</p>
-                    <p className="mt-1 text-slate-600">Revision {source.content_revision}</p>
+                    <p className="mt-1 text-slate-600">
+                      Revision {source.content_revision}
+                    </p>
                   </details>
                 ))}
               </article>

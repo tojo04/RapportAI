@@ -32,7 +32,7 @@ class Settings:
     live_classification_model: str | None = None
     live_coach_model: str | None = None
     database_url: str = (
-        "postgresql+psycopg://rapportai:rapportai@localhost:5432/rapportai"
+        "postgresql+psycopg://rapportai:rapportai@localhost:55432/rapportai"
     )
     knowledge_embedding_model: str = "text-embedding-3-small"
     knowledge_embedding_dimensions: int = 1536
@@ -165,7 +165,7 @@ def get_settings() -> Settings:
         database_url=(
             os.getenv(
                 "DATABASE_URL",
-                "postgresql+psycopg://rapportai:rapportai@localhost:5432/rapportai",
+                "postgresql+psycopg://rapportai:rapportai@localhost:55432/rapportai",
             ).strip()
         ),
         knowledge_embedding_model=(

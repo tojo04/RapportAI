@@ -1,0 +1,1 @@
+{"language":"Hindi (Devanagari)","segments":[{"segment_id":"hi-1","order":1,"text":"क्या यह Microsoft 365 के साथ जुड़ता है?"},{"segment_id":"hi-2","order":2,"text":"कीमत हमारे बजट से बहुत ज़्यादा है।"}],"expected":[{"category":"question","evidence_span":"Microsoft 365 के साथ जुड़ता है"},{"category":"objection","evidence_span":"बजट से बहुत ज़्यादा"}]}

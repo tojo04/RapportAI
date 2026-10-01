@@ -6,6 +6,7 @@ import ErrorMessage from './components/ErrorMessage';
 import LiveCallPanel from './components/LiveCallPanel';
 import ScoreBreakdown from './components/ScoreBreakdown';
 import ScoreCard from './components/ScoreCard';
+import CallHistory from './components/CallHistory';
 import { analyzeCall } from './services/api';
 import type { AnalyzeCallResponse } from './types/analysis';
 
@@ -106,6 +107,8 @@ function App() {
               />
             </section>
           )}
+
+          <CallHistory />
         </div>
       </section>
     </main>

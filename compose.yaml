@@ -1,6 +1,50 @@
 name: rapportai
 
 services:
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/ >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build:
+      context: ./backend
+    command: ["sh", "-c", "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_TRANSCRIPTION_MODEL: ${OPENAI_TRANSCRIPTION_MODEL:-}
+      OPENAI_ANALYSIS_MODEL: ${OPENAI_ANALYSIS_MODEL:-}
+      LIVE_STT_MODEL: ${LIVE_STT_MODEL:-gpt-live-transcribe}
+      LIVE_CLASSIFICATION_MODEL: ${LIVE_CLASSIFICATION_MODEL:-}
+      LIVE_COACH_MODEL: ${LIVE_COACH_MODEL:-}
+      DATABASE_URL: postgresql+psycopg://rapportai:rapportai@postgres:5432/rapportai
+      PERSISTENCE_ENABLED: "true"
+      REDIS_URL: redis://redis:6379/0
+      REDIS_ENABLED: "true"
+      FRONTEND_ORIGIN: http://localhost:${FRONTEND_PORT:-8080}
+      ALLOWED_ORIGINS: http://localhost:${FRONTEND_PORT:-8080}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   postgres:
     image: pgvector/pgvector:0.8.1-pg17
     environment:
@@ -8,7 +52,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-rapportai}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rapportai}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-55432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rapportai} -d ${POSTGRES_DB:-rapportai}"]
       interval: 5s

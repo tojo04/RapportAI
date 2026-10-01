@@ -116,6 +116,8 @@ async def create_live_call(
     if session is not None and context_store is not None:
         session.context_store = context_store
         await context_store.start(response.call_id)
+    if session is not None:
+        session.metrics = getattr(request.app.state, "pipeline_metrics", None)
     return response
 
 
@@ -177,13 +179,66 @@ async def _enqueue(
                     await session.persistence_sink(event)
                 except PersistenceError:
                     session.persistence_failed = True
-            if isinstance(event, CallEndedEvent) and session.analysis_scheduler is not None:
+                    if session.metrics is not None:
+                        session.metrics.increment("persistence_errors")
+                    warning = WarningEvent(
+                        call_id=session.call_id,
+                        seq=session.next_outbound_sequence(),
+                        payload=DiagnosticPayload(
+                            code="persistence_failed",
+                            message=(
+                                "Call storage failed. This call is not confirmed saved."
+                            ),
+                            recoverable=True,
+                            state=session.state,
+                        ),
+                    )
+                    try:
+                        queue.put_nowait(warning)
+                    except asyncio.QueueFull:
+                        pass
+            if (
+                isinstance(event, CallEndedEvent)
+                and session.analysis_scheduler is not None
+                and not session.persistence_failed
+            ):
                 session.analysis_scheduler(session.call_id)
             if session.context_store is not None:
                 if isinstance(event, TranscriptFinalEvent):
                     await session.context_store.append(session.call_id, event.payload.model_dump(mode="json"))
                 elif isinstance(event, CallEndedEvent):
                     await session.context_store.finish(session.call_id)
+                if (
+                    getattr(session.context_store, "degraded", False)
+                    and not session.degraded_warning_emitted
+                ):
+                    session.degraded_warning_emitted = True
+                    degraded = WarningEvent(
+                        call_id=session.call_id,
+                        seq=session.next_outbound_sequence(),
+                        payload=DiagnosticPayload(
+                            code="session_store_degraded",
+                            message=(
+                                "Temporary context is using bounded in-memory fallback."
+                            ),
+                            recoverable=True,
+                            state=session.state,
+                        ),
+                    )
+                    try:
+                        queue.put_nowait(degraded)
+                    except asyncio.QueueFull:
+                        pass
+            if session.metrics is not None:
+                if isinstance(event, CallStartedEvent):
+                    session.metrics.call_started()
+                elif isinstance(event, TranscriptFinalEvent):
+                    session.metrics.final_received(session.call_id, event.payload.segment_id)
+                elif isinstance(event, CoachSuggestionEvent):
+                    session.metrics.suggestion_delivered(session.call_id, event.payload.evidence_segment_ids)
+                elif isinstance(event, CallEndedEvent):
+                    session.metrics.call_ended()
+                session.metrics.queue_depth(queue.qsize())
     except TimeoutError as exc:
         async with session.lock:
             session.state = CallState.FAILED

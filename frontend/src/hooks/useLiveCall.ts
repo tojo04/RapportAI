@@ -418,7 +418,8 @@ export function useLiveCall(
               if (mountedRef.current) {
                 setSuggestions((current) =>
                   current.some(
-                    (item) => item.suggestion_id === event.payload.suggestion_id,
+                    (item) =>
+                      item.suggestion_id === event.payload.suggestion_id,
                   )
                     ? current
                     : [...current, event.payload],
@@ -444,6 +445,9 @@ export function useLiveCall(
               } else if (!event.payload.recoverable) {
                 failRef.current(event.payload.message);
               }
+              break;
+            case 'warning':
+              if (mountedRef.current) setError(event.payload.message);
               break;
           }
         } catch (eventError: unknown) {

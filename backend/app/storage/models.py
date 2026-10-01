@@ -117,15 +117,23 @@ class TranscriptSegmentRecord(Base):
 
 class SalesEventRecord(Base):
     __tablename__ = "sales_events"
-    sales_event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sales_event_id: Mapped[str] = mapped_column(String(128), nullable=False)
     call_id: Mapped[str] = mapped_column(ForeignKey("calls.call_id", ondelete="CASCADE"), nullable=False)
     event_order: Mapped[int] = mapped_column(Integer, nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    __table_args__ = (
+        Index("uq_sales_event_call_identity", "call_id", "sales_event_id", unique=True),
+    )
 
 
 class SuggestionRecord(Base):
     __tablename__ = "suggestions"
-    suggestion_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    suggestion_id: Mapped[str] = mapped_column(String(128), nullable=False)
     call_id: Mapped[str] = mapped_column(ForeignKey("calls.call_id", ondelete="CASCADE"), nullable=False)
     suggestion_order: Mapped[int] = mapped_column(Integer, nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    __table_args__ = (
+        Index("uq_suggestion_call_identity", "call_id", "suggestion_id", unique=True),
+    )

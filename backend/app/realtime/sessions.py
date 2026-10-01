@@ -47,6 +47,8 @@ class LiveCallSession:
     persistence_failed: bool = False
     analysis_scheduler: Callable[[str], bool] | None = field(default=None, repr=False)
     context_store: object | None = field(default=None, repr=False)
+    metrics: object | None = field(default=None, repr=False)
+    degraded_warning_emitted: bool = False
 
     async def attach(
         self,

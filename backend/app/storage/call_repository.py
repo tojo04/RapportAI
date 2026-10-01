@@ -56,12 +56,12 @@ class CallRepository:
                     session.execute(insert(SalesEventRecord).values(
                         sales_event_id=event.payload.sales_event_id, call_id=event.call_id,
                         event_order=event.seq, payload=payload,
-                    ).on_conflict_do_nothing(index_elements=["sales_event_id"]))
+                    ).on_conflict_do_nothing(index_elements=["call_id", "sales_event_id"]))
                 elif isinstance(event, CoachSuggestionEvent):
                     session.execute(insert(SuggestionRecord).values(
                         suggestion_id=event.payload.suggestion_id, call_id=event.call_id,
                         suggestion_order=event.seq, payload=payload,
-                    ).on_conflict_do_nothing(index_elements=["suggestion_id"]))
+                    ).on_conflict_do_nothing(index_elements=["call_id", "suggestion_id"]))
                 elif isinstance(event, CallStartedEvent):
                     session.execute(update(CallRecord).where(CallRecord.call_id == event.call_id).values(status="live"))
                 elif isinstance(event, CallEndedEvent):

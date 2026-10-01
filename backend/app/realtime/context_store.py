@@ -16,6 +16,7 @@ class SessionContextStore(Protocol):
     async def recent(self, call_id: str) -> list[dict]: ...
     async def claim_once(self, call_id: str, key: str) -> bool: ...
     async def finish(self, call_id: str) -> None: ...
+    async def close(self) -> None: ...
 
 
 class InMemorySessionContextStore:
@@ -56,6 +57,9 @@ class InMemorySessionContextStore:
         async with self._lock:
             self._calls.pop(call_id, None)
             self._dedupe.pop(call_id, None)
+
+    async def close(self) -> None:
+        return None
 
 
 class RedisSessionContextStore:
@@ -99,6 +103,9 @@ class RedisSessionContextStore:
             pipe.delete(self._key(call_id, "active"))
             await pipe.execute()
 
+    async def close(self) -> None:
+        await self._redis.aclose()
+
 
 class ResilientSessionContextStore:
     """Redis first, bounded single-worker memory fallback on outages."""
@@ -122,3 +129,9 @@ class ResilientSessionContextStore:
     async def recent(self, call_id: str) -> list[dict]: return await self._run("recent", call_id)
     async def claim_once(self, call_id: str, key: str) -> bool: return await self._run("claim_once", call_id, key)
     async def finish(self, call_id: str) -> None: await self._run("finish", call_id)
+
+    async def close(self) -> None:
+        try:
+            await self._primary.close()  # type: ignore[attr-defined]
+        finally:
+            await self._fallback.close()

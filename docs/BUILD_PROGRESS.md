@@ -1,6 +1,6 @@
 # RapportAI V2 build progress
 
-Last updated: 2026-09-30
+Last updated: 2026-10-01
 
 ## Task checklist
 
@@ -18,10 +18,10 @@ Last updated: 2026-09-30
 - [x] Task 11 — Persist active calls and add history APIs
 - [x] Task 12 — Reuse V1 analysis and scoring after live calls
 - [x] Task 13 — Add Redis for bounded temporary context
-- [ ] Task 14 — Finish the dashboard without expanding scope
-- [ ] Task 15 — Evaluate English, Hindi, and Hinglish honestly
-- [ ] Task 16 — Instrument latency and test controlled load
-- [ ] Task 17 — Package, review, and prepare the interview demo
+- [x] Task 14 — Finish the dashboard without expanding scope
+- [x] Task 15 — Evaluate English, Hindi, and Hinglish honestly
+- [x] Task 16 — Instrument latency and test controlled load
+- [x] Task 17 — Package, review, and prepare the interview demo
 
 ## Task 0 outcome
 
@@ -434,3 +434,87 @@ Task 13 — add bounded Redis-backed ephemeral context with fallback.
 ## Next task
 
 Task 14 — finish the combined live/upload/history dashboard.
+
+## Task 14 outcome
+
+- Kept the V1 upload workflow and added clearly differentiated partial/final
+  live transcript, signal timeline, grounded coaching/source details, status,
+  duration, incomplete/degraded messages, and stale-call state reset.
+- Added keyboard-accessible saved-history navigation with pending, failed,
+  retry, and completed V1 analysis views. Only known counts/timings are shown;
+  speaker roles remain honest and no emotion/talk-ratio metrics were invented.
+
+## Next task
+
+Task 15 — add honest English, Hindi, and Hinglish text evaluation.
+
+## Task 15 outcome
+
+- Added synthetic English, Devanagari Hindi, Hinglish, negation, and no-signal
+  text fixtures with exact Unicode evidence labels.
+- Detection preserves evidence language and coaching documents response-language
+  selection without weakening grounding. Unknown speakers remain unknown.
+- Unicode/fixture checks are automated; real model reasoning and multilingual
+  audio/STT accuracy remain explicitly opt-in and unmeasured.
+
+## Next task
+
+Task 16 — instrument final-to-suggestion latency and controlled fake load.
+
+## Task 16 outcome
+
+- Added bounded content-free monotonic measurements for the precisely named
+  final-receipt-to-suggestion-delivery metric, plus counters and gauges.
+- Speech-end latency is explicitly unavailable without a compatible VAD/audio
+  clock boundary. Targets are labeled as targets, not guarantees.
+- Added a deterministic fake benchmark and documented its environment/sample
+  count separately from unrun real provider/service load.
+
+## Next task
+
+Task 17 — package, verify, document, and prepare the interview demo.
+
+## Task 17 outcome
+
+- Added production frontend/backend images and nginx HTTP/WebSocket proxying;
+  Compose now defines one backend worker, frontend, pgvector PostgreSQL, Redis,
+  health checks, readiness ordering, and a persistent database volume.
+- Added GitHub Actions for Python 3.11 tests/migrations/fake ingestion and Node
+  tests/lint/typecheck/format/build with disposable PostgreSQL/Redis services.
+- Rewrote the README with exact native/Compose setup and opt-in real modes;
+  added the demo script and interview architecture/failure/privacy notes.
+- Release review fixed call-scoped event/suggestion identities, explicit
+  persistence/degraded warnings, Redis IO timeouts, shutdown cleanup, and the
+  canonical additive history routes.
+
+### Final automated verification
+
+```text
+backend/.venv/Scripts/python.exe -m pytest
+157 passed, 1 existing Starlette/httpx deprecation warning
+
+npm test -- --run
+46 passed across 9 files
+npm run lint, typecheck, format:check, build
+passed
+
+python -m alembic upgrade head --sql
+generated both migrations successfully
+docker compose config
+passed
+docker compose build backend frontend
+passed
+live Compose pgvector migration + fake ingestion twice
+passed; one active corpus, 11 chunks, unchanged refresh reused 11 embeddings
+Redis ping + packaged backend/frontend health + proxied API health/history
+passed; all four services healthy
+tracked-source secret pattern scan
+no real key found; README contains only the documented placeholder
+```
+
+### Checks still requiring manual intervention
+
+- Real microphone/browser and OpenAI STT/detection/coaching tests were not run;
+  they require hardware, an explicit billable opt-in, and consented/synthetic
+  speech. Multilingual audio accuracy therefore remains unmeasured.
+- No release tag or remote push was created in this task.

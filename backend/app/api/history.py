@@ -4,7 +4,7 @@ from starlette.concurrency import run_in_threadpool
 from app.storage.call_repository import CallRepository, PersistenceError
 
 
-router = APIRouter(prefix="/api/history", tags=["history"])
+router = APIRouter(prefix="/api", tags=["history"])
 
 
 def _repository(request: Request) -> CallRepository:
